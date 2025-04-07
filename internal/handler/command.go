@@ -1,0 +1,88 @@
+package handler
+
+import (
+	"fmt"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+var baseAddCommandOptions = []*discordgo.ApplicationCommandOption{
+	{
+		Name:        "cron",
+		Type:        discordgo.ApplicationCommandOptionString,
+		Description: "The cron expression for the soundcron.",
+		Required:    true,
+	},
+	{
+		Name:        "name",
+		Type:        discordgo.ApplicationCommandOptionString,
+		Description: "The name of the soundcron. Defaults to the file name if not provided.",
+		Required:    false,
+	},
+}
+
+var fileAddOptions = append([]*discordgo.ApplicationCommandOption{
+	{
+		Name:        "audio",
+		Type:        discordgo.ApplicationCommandOptionAttachment,
+		Description: "The file to play when the soundcron runs.",
+		Required:    true,
+	},
+}, baseAddCommandOptions...)
+
+var urlAddOptions = append([]*discordgo.ApplicationCommandOption{
+	{
+		Name:        "audio",
+		Type:        discordgo.ApplicationCommandOptionString,
+		Description: "The URL to play when the soundcron runs.",
+		Required:    true,
+	},
+}, baseAddCommandOptions...)
+
+// Commands is a list of all the commands the bot can handle.
+// This is used to register the commands with Discord.
+var Commands = []*discordgo.ApplicationCommand{
+	{
+		Name:        "soundcron",
+		Description: "Manage and work with soundcrons",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "list",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Description: "List all soundcrons",
+			},
+			{
+				Name:        "add",
+				Type:        discordgo.ApplicationCommandOptionSubCommandGroup,
+				Description: "Add a soundcron to this server",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "file",
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
+						Description: "Add a soundcron using a file attachment.",
+						Options:     fileAddOptions,
+					},
+					{
+						Name:        "url",
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
+						Description: "Add a soundcron using an audio URL.",
+						Options:     urlAddOptions,
+					},
+				},
+			},
+		},
+	},
+}
+
+func EstablishCommands(s *discordgo.Session, guildID string) error {
+	if s.State.User == nil {
+		return fmt.Errorf("session is not established")
+	}
+	for _, command := range Commands {
+		_, err := s.ApplicationCommandCreate(s.State.User.ID, guildID, command)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
