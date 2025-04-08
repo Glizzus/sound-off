@@ -30,15 +30,6 @@ var fileAddOptions = append([]*discordgo.ApplicationCommandOption{
 	},
 }, baseAddCommandOptions...)
 
-var urlAddOptions = append([]*discordgo.ApplicationCommandOption{
-	{
-		Name:        "audio",
-		Type:        discordgo.ApplicationCommandOptionString,
-		Description: "The URL to play when the soundcron runs.",
-		Required:    true,
-	},
-}, baseAddCommandOptions...)
-
 // Commands is a list of all the commands the bot can handle.
 // This is used to register the commands with Discord.
 var Commands = []*discordgo.ApplicationCommand{
@@ -61,12 +52,6 @@ var Commands = []*discordgo.ApplicationCommand{
 						Type:        discordgo.ApplicationCommandOptionSubCommand,
 						Description: "Add a soundcron using a file attachment.",
 						Options:     fileAddOptions,
-					},
-					{
-						Name:        "url",
-						Type:        discordgo.ApplicationCommandOptionSubCommand,
-						Description: "Add a soundcron using an audio URL.",
-						Options:     urlAddOptions,
 					},
 				},
 			},

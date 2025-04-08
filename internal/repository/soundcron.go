@@ -11,13 +11,23 @@ import (
 
 type SoundCron struct {
 	ID       string
+	Name     string
 	GuildID  string
 	Cron     string
-	FileSize string
+	FileSize int64
+}
+
+type SoundCronLister interface {
+	List(ctx context.Context, guildID string) ([]SoundCron, error)
 }
 
 type SoundCronPersister interface {
 	Save(ctx context.Context, soundCron SoundCron) error
+}
+
+type SoundCronRepository interface {
+	SoundCronPersister
+	SoundCronLister
 }
 
 type PostgresSoundCronRepository struct {
@@ -31,6 +41,7 @@ func NewPostgresSoundCronRepository(db *pgxpool.Pool) *PostgresSoundCronReposito
 func SoundCronToRowParams(soundCron SoundCron) []any {
 	return []any{
 		soundCron.ID,
+		soundCron.Name,
 		soundCron.GuildID,
 		soundCron.Cron,
 		soundCron.FileSize,
@@ -39,12 +50,14 @@ func SoundCronToRowParams(soundCron SoundCron) []any {
 
 func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundCron) error {
 	const soundCronQuery = `
-	INSERT INTO soundcron (id, guild_id, cron, file_size)
-	VALUES ($1, $2, $3, $4)
-	ON CONFLICT (id) DO UPDATE SET
+	INSERT INTO soundcron (id, soundcron_name, guild_id, cron, file_size)
+	VALUES ($1, $2, $3, $4, $5)
+	ON CONFLICT (id)
+	DO UPDATE SET
+		soundcron_name = EXCLUDED.soundcron_name,
 		guild_id = EXCLUDED.guild_id,
 		cron = EXCLUDED.cron,
-		file_size = EXCLUDED.file_size
+		file_size = EXCLUDED.file_size;
 	`
 
 	next5Times, err := schedule.NextRunTimes(soundCron.Cron, 5)
@@ -53,7 +66,7 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 	}
 
 	const soundCronJobsQuery = `
-	INSERT INTO soundcron_jobs (soundcron_id, run_time)
+	INSERT INTO soundcron_job (soundcron_id, run_time)
 	SELECT $1, unnest($2::timestamp[])
 	ON CONFLICT (soundcron_id, run_time) DO NOTHING
 	`
@@ -85,4 +98,32 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 	return nil
 }
 
-var _ SoundCronPersister = (*PostgresSoundCronRepository)(nil)
+func (r *PostgresSoundCronRepository) List(ctx context.Context, guildID string) ([]SoundCron, error) {
+	const query = `
+	SELECT id, soundcron_name, guild_id, cron, file_size
+	FROM soundcron
+	WHERE guild_id = $1
+	`
+	rows, err := r.db.Query(ctx, query, guildID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sound cron: %w", err)
+	}
+	defer rows.Close()
+
+	var soundCrons []SoundCron
+	for rows.Next() {
+		var sc SoundCron
+		if err := rows.Scan(&sc.ID, &sc.Name, &sc.GuildID, &sc.Cron, &sc.FileSize); err != nil {
+			return nil, fmt.Errorf("failed to scan sound cron: %w", err)
+		}
+		soundCrons = append(soundCrons, sc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate over rows: %w", err)
+	}
+
+	return soundCrons, nil
+}
+
+var _ SoundCronRepository = (*PostgresSoundCronRepository)(nil)

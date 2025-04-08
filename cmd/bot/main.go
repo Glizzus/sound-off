@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"github.com/glizzus/sound-off/internal/config"
 	"github.com/glizzus/sound-off/internal/datalayer"
 	"github.com/glizzus/sound-off/internal/handler"
+	"github.com/glizzus/sound-off/internal/repository"
 )
 
 func runBotForever() error {
@@ -35,10 +37,21 @@ func runBotForever() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	interactionHandler := handler.MakeInteractionCreateHandler()
+	repository := repository.NewPostgresSoundCronRepository(pool)
+
+	minioStorage, err := datalayer.NewMinioStorageFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to create minio storage: %w", err)
+	}
+
+	if err := minioStorage.EnsureBucket(context.Background()); err != nil {
+		return fmt.Errorf("failed to ensure minio bucket: %w", err)
+	}
+
+	interactionHandler := handler.MakeInteractionCreateHandler(repository, minioStorage)
 
 	session, err := handler.NewSession(config.Token, handler.Handlers{
-		Ready:         handler.ReadyLog,
+		Ready:             handler.ReadyLog,
 		InteractionCreate: interactionHandler,
 	})
 	if err != nil {
