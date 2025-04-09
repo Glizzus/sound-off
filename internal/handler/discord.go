@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/glizzus/sound-off/internal/datalayer"
 	"github.com/glizzus/sound-off/internal/generator"
 	"github.com/glizzus/sound-off/internal/repository"
+	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/util"
 )
 
@@ -102,22 +104,14 @@ func CheckStorageAvailable(soundCrons []repository.SoundCron, requested, maxStor
 	return nil
 }
 
-func CheckSoundCronAlreadyExists(soundCrons []repository.SoundCron) error {
-	type uniqueConstraint struct {
-		GuildID string
-		Name    string
-	}
-
-	uniqueMap := make(map[uniqueConstraint]struct{})
+func CheckSoundCronAlreadyExists(candidate repository.SoundCron, soundCrons []repository.SoundCron) error {
 	for _, soundCron := range soundCrons {
-		key := uniqueConstraint{
-			GuildID: soundCron.GuildID,
-			Name:    soundCron.Name,
+		if soundCron.Name == candidate.Name && soundCron.GuildID == candidate.GuildID {
+			return &SoundCronAlreadyExistsError{
+				GuildID: candidate.GuildID,
+				Name:    candidate.Name,
+			}
 		}
-		if _, exists := uniqueMap[key]; exists {
-			return fmt.Errorf("soundcron already exists for guild %s with name %s", soundCron.GuildID, soundCron.Name)
-		}
-		uniqueMap[key] = struct{}{}
 	}
 	return nil
 }
@@ -165,6 +159,41 @@ func (a *AudioPiper) Pipe(ctx context.Context, key, sourceURL string) error {
 	return nil
 }
 
+func DoListSoundCrons(
+	s *discordgo.Session,
+	i *discordgo.InteractionCreate,
+	lister repository.SoundCronLister,
+) error {
+	ctx := context.Background()
+
+	soundCrons, err := lister.List(ctx, i.GuildID)
+	if err != nil {
+		return fmt.Errorf("failed to list soundcrons: %w", err)
+	}
+	if len(soundCrons) == 0 {
+		return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "No soundcrons found",
+			},
+		})
+	}
+	var responseContent string
+	for _, sc := range soundCrons {
+		responseContent += fmt.Sprintf("Name: %s, ID: %s\n", sc.Name, sc.ID)
+	}
+	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: responseContent,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to respond to interaction: %w", err)
+	}
+	return nil
+}
+
 func MakeInteractionCreateHandler(
 	repo *repository.PostgresSoundCronRepository,
 	blobStorage datalayer.BlobStorage,
@@ -176,6 +205,12 @@ func MakeInteractionCreateHandler(
 	}
 
 	uuidGenerator := generator.UUIDGenerator{}
+
+	addFileHandler := AddFileHandler{
+		Repo:          repo,
+		AudioPiper:    audioPiper,
+		UUIDGenerator: uuidGenerator,
+	}
 
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		command := i.ApplicationCommandData()
@@ -197,6 +232,12 @@ func MakeInteractionCreateHandler(
 			}
 			subCommand := command.Options[0]
 			switch subCommand.Name {
+			case "list":
+				err := DoListSoundCrons(s, i, repo)
+				if err != nil {
+					slog.Warn("Failed to list soundcrons", "error", err)
+					return
+				}
 			case "add":
 				if len(subCommand.Options) == 0 {
 					slog.Warn("No subcommand provided for soundcron add command")
@@ -205,61 +246,114 @@ func MakeInteractionCreateHandler(
 				subCommandGroup := subCommand.Options[0]
 				switch subCommandGroup.Name {
 				case "file":
-					addFileRequest, err := CommandToAddFileRequest(command.Resolved.Attachments, subCommandGroup.Options)
+					addFileRequest, err := CommandToAddFileRequest(
+						command.Resolved.Attachments,
+						subCommandGroup.Options,
+					)
 					if err != nil {
-						slog.Warn("Failed to convert command to add file request", "error", err)
-						return
+						slog.Warn("Failed to parse add file request", "error", err)
+						err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+							Type: discordgo.InteractionResponseChannelMessageWithSource,
+							Data: &discordgo.InteractionResponseData{
+								Content: "Invalid request format",
+							},
+						})
+						if err != nil {
+							slog.Error("Failed to respond to interaction", "error", err)
+						}
 					}
 
-					id, err := uuidGenerator.Next()
+					err = addFileHandler.Handle(
+						i.GuildID,
+						addFileRequest,
+					)
 					if err != nil {
-						slog.Warn("Failed to generate UUID", "error", err)
-						return
-					}
-
-					soundCron := repository.SoundCron{
-						ID:       id,
-						Name:     addFileRequest.Name,
-						GuildID:  i.GuildID,
-						Cron:     addFileRequest.Cron,
-						FileSize: int64(addFileRequest.Attachment.Size),
-					}
-
-					ctx := context.Background()
-					soundCrons, err := repo.List(ctx, i.GuildID)
-					if err != nil {
-						slog.Warn("Failed to list soundcrons", "error", err)
-						return
-					}
-
-					err = CheckStorageAvailable(soundCrons, soundCron.FileSize, MaxStorageSize)
-					if err != nil {
-						slog.Warn("Storage limit exceeded", "error", err)
-						return
-					}
-
-					err = CheckSoundCronAlreadyExists(soundCrons)
-					if err != nil {
-						slog.Warn("Soundcron already exists", "error", err)
-						return
-					}
-
-					log.Printf("About to pipe audio: %s", addFileRequest.Attachment.ProxyURL)
-					err = audioPiper.Pipe(ctx, id, addFileRequest.Attachment.ProxyURL)
-					if err != nil {
-						slog.Warn("Failed to pipe audio", "error", err)
-						return
-					}
-
-					err = repo.Save(ctx, soundCron)
-					if err != nil {
-						slog.Warn("Failed to save soundcron", "error", err)
-						return
+						errorMessage := "Internal server error - please try again later"
+						var ue *UserError
+						if errors.As(err, &ue) {
+							errorMessage = ue.Message
+						} else {
+							slog.Error("Failed to handle add file request", "error", err)
+						}
+						err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+							Type: discordgo.InteractionResponseChannelMessageWithSource,
+							Data: &discordgo.InteractionResponseData{
+								Content: errorMessage,
+								Flags:   discordgo.MessageFlagsEphemeral,
+							},
+						})
+						if err != nil {
+							slog.Error("Failed to respond to interaction", "error", err)
+						}
 					}
 				}
 			}
 		}
 	}
+}
+
+type AddFileHandler struct {
+	Repo          repository.SoundCronRepository
+	AudioPiper    *AudioPiper
+	UUIDGenerator generator.UUIDGenerator
+}
+
+func (h *AddFileHandler) Handle(
+	guildID string,
+	addFileRequest *SoundCronAddFileRequest,
+) error {
+	id, err := h.UUIDGenerator.Next()
+	if err != nil {
+		return fmt.Errorf("failed to generate UUID: %w", err)
+	}
+
+	soundCron := repository.SoundCron{
+		ID:       id,
+		Name:     addFileRequest.Name,
+		GuildID:  guildID,
+		Cron:     addFileRequest.Cron,
+		FileSize: int64(addFileRequest.Attachment.Size),
+	}
+
+	ctx := context.Background()
+
+	soundCrons, err := h.Repo.List(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("failed to list soundcrons: %w", err)
+	}
+
+	err = CheckStorageAvailable(soundCrons, soundCron.FileSize, MaxStorageSize)
+	if err != nil {
+		return &UserError{
+			Message: "Storage limit exceeded",
+		}
+	}
+
+	err = CheckSoundCronAlreadyExists(soundCron, soundCrons)
+	if err != nil {
+		return &UserError{
+			Message: "Soundcron with this name already exists",
+		}
+	}
+
+	err = schedule.ValidateCron(soundCron.Cron)
+	if err != nil {
+		return &UserError{
+			Message: "Invalid cron expression",
+		}
+	}
+
+	err = h.Repo.Save(ctx, soundCron)
+	if err != nil {
+		return fmt.Errorf("failed to pipe audio: %w", err)
+	}
+
+	err = h.Repo.Save(ctx, soundCron)
+	if err != nil {
+		return fmt.Errorf("failed to save soundcron: %w", err)
+	}
+
+	return nil
 }
 
 type Handlers struct {

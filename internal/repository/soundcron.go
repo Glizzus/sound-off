@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,13 @@ type SoundCron struct {
 	FileSize int64
 }
 
+type SoundCronJob struct {
+	SoundCronID string
+	Name        string
+	GuildID     string
+	RunTime     time.Time
+}
+
 type SoundCronLister interface {
 	List(ctx context.Context, guildID string) ([]SoundCron, error)
 }
@@ -25,9 +33,14 @@ type SoundCronPersister interface {
 	Save(ctx context.Context, soundCron SoundCron) error
 }
 
+type SoundCronJobPuller interface {
+	Pull(ctx context.Context, within time.Time) ([]SoundCronJob, error)
+}
+
 type SoundCronRepository interface {
 	SoundCronPersister
 	SoundCronLister
+	SoundCronJobPuller
 }
 
 type PostgresSoundCronRepository struct {
@@ -60,7 +73,7 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 		file_size = EXCLUDED.file_size;
 	`
 
-	next5Times, err := schedule.NextRunTimes(soundCron.Cron, 5)
+	nextTimes, err := schedule.NextRunTimes(soundCron.Cron, 5)
 	if err != nil {
 		return fmt.Errorf("failed to get next run times: %w", err)
 	}
@@ -86,7 +99,7 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 		return fmt.Errorf("failed to execute sound cron query: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, soundCronJobsQuery, soundCron.ID, next5Times)
+	_, err = tx.Exec(ctx, soundCronJobsQuery, soundCron.ID, nextTimes)
 	if err != nil {
 		return fmt.Errorf("failed to execute sound cron jobs query: %w", err)
 	}
@@ -124,6 +137,36 @@ func (r *PostgresSoundCronRepository) List(ctx context.Context, guildID string) 
 	}
 
 	return soundCrons, nil
+}
+
+func (r *PostgresSoundCronRepository) Pull(ctx context.Context, within time.Time) ([]SoundCronJob, error) {
+	const query = `
+	DELETE FROM soundcron_job scj
+	USING soundcron sc
+	WHERE scj.soundcron_id = sc.id
+		AND scj.run_time > now()
+		AND scj.run_time < $1
+	RETURNING sc.id, sc.soundcron_name, sc.guild_id, scj.run_time
+	`
+
+	rows, err := r.db.Query(ctx, query, within.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sound cron: %w", err)
+	}
+	defer rows.Close()
+
+	var soundCronJobs []SoundCronJob
+	for rows.Next() {
+		var scj SoundCronJob
+		if err := rows.Scan(&scj.SoundCronID, &scj.Name, &scj.GuildID, &scj.RunTime); err != nil {
+			return nil, fmt.Errorf("failed to scan sound cron job: %w", err)
+		}
+		soundCronJobs = append(soundCronJobs, scj)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate over rows: %w", err)
+	}
+	return soundCronJobs, nil
 }
 
 var _ SoundCronRepository = (*PostgresSoundCronRepository)(nil)

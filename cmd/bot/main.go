@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/glizzus/sound-off/internal/config"
 	"github.com/glizzus/sound-off/internal/datalayer"
 	"github.com/glizzus/sound-off/internal/handler"
 	"github.com/glizzus/sound-off/internal/repository"
+	"github.com/glizzus/sound-off/internal/voice"
 )
 
 func runBotForever() error {
@@ -72,6 +74,37 @@ func runBotForever() error {
 	if err := handler.EstablishCommands(session, guildID); err != nil {
 		return fmt.Errorf("failed to establish commands: %w", err)
 	}
+
+	ticker := time.NewTicker(27 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				upcoming, err := repository.Pull(context.Background(), time.Now().Add(time.Minute))
+				if err != nil {
+					slog.Error("failed to pull soundcrons", "error", err)
+					continue
+				}
+				for _, sc := range upcoming {
+					channels, err := session.GuildChannels(guildID)
+					if err != nil {
+						slog.Error("failed to get guild channels", "error", err)
+						continue
+					}
+
+					guild := voice.MaxAttendedChannel(channels)
+					if guild == nil {
+						slog.Warn("no guild found")
+						continue
+					}
+
+					log.Printf("imagine we are playing this soundcron %s in channel %s", sc.Name, guild.ID)
+
+				}
+			case <-time.After(5 * time.Minute):
+			}
+		}
+	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)

@@ -8,8 +8,9 @@ import (
 )
 
 // NextRunTimes returns the next N run times that a cron expression will run.
+// Each run time is in UTC.
 func NextRunTimes(cron string, n int) ([]time.Time, error) {
-	cutoff := time.Now()
+	cutoff := time.Now().UTC()
 	return NextRunTimesAfter(cron, cutoff, n)
 }
 
@@ -24,4 +25,12 @@ func NextRunTimesAfter(cron string, after time.Time, n int) ([]time.Time, error)
 		return nil, err
 	}
 	return expr.NextN(after, uint(n)), nil
+}
+
+func ValidateCron(cron string) error {
+	_, err := cronexpr.Parse(cron)
+	if err != nil {
+		return fmt.Errorf("invalid cron expression: %w", err)
+	}
+	return nil
 }
