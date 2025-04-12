@@ -3,7 +3,7 @@ package schedule
 import "time"
 
 type ScheduledJob struct {
-	RunAt time.Time
+	RunAt   time.Time
 	Execute func()
 }
 

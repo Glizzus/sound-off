@@ -11,5 +11,6 @@ CREATE TABLE soundcron_job (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     soundcron_id UUID NOT NULL REFERENCES soundcron(id) ON DELETE CASCADE,
     run_time TIMESTAMPTZ NOT NULL,
+    picked_up_at TIMESTAMPTZ,
     UNIQUE (soundcron_id, run_time)
 )

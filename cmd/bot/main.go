@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -17,7 +18,7 @@ import (
 	"github.com/glizzus/sound-off/internal/repository"
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/voice"
-	"github.com/jogramming/dca"
+	"github.com/glizzus/sound-off/internal/dca"
 )
 
 func runBotForever() error {
@@ -79,6 +80,8 @@ func runBotForever() error {
 		return fmt.Errorf("failed to establish commands: %w", err)
 	}
 
+	dcaSteamer := voice.NewFFmpegDCAStreamer(&voice.HTTPURLReader{Client: http.DefaultClient})
+
 	ticker := time.NewTicker(27 * time.Second)
 	go func() {
 		for {
@@ -90,6 +93,7 @@ func runBotForever() error {
 					continue
 				}
 				for _, sc := range upcoming {
+					slog.Info("pulled soundcron", "soundcron_id", sc.SoundCronID, "run_time", sc.RunTime)
 					channels, err := session.GuildChannels(guildID)
 					if err != nil {
 						slog.Error("failed to get guild channels", "error", err)
@@ -107,17 +111,31 @@ func runBotForever() error {
 						Execute: func() {
 							err = voice.WithVoiceChannel(session, channel.GuildID, channel.ID, func(s *discordgo.Session, vc *discordgo.VoiceConnection) error {
 								// TODO: Dynamicize the endpoint
-								url := "http://localhost:9000/" + sc.SoundCronID
-								audioSession, err := voice.StreamDCAOnTheFly(context.Background(), url)
+								url := "http://localhost:9000/soundoff/" + sc.SoundCronID
+								audioSession, err := dcaSteamer.StreamDCAOnTheFly(context.Background(), url)
 								if err != nil {
 									return fmt.Errorf("unable to stream dca on the fly: %w", err)
 								}
+								defer audioSession.Cleanup()
 
-								done := make(chan error, 1)
-								_ = dca.NewStream(audioSession, vc, done)
+								done := make(chan error)
+								stream := dca.NewStream(audioSession, vc, done)
 								err = <-done
-								if err != nil && err != io.EOF {
-									return fmt.Errorf("error occurred while playing sound: %w", err)
+								if err != nil {
+									if err == io.EOF {
+										log.Printf("Stream finished")
+									} else {
+										log.Printf("Stream error: %v", err)
+									}
+								}
+								_, err = stream.Finished()
+								if err != nil {
+									log.Printf("Stream finished with error: %v", err)
+								}
+
+								err = audioSession.Error()
+								if err != nil {
+									log.Printf("Audio session error: %v", err)
 								}
 
 								return nil
@@ -125,9 +143,14 @@ func runBotForever() error {
 							if err != nil {
 								slog.Error("failed to play sound", "error", err)
 							}
+							err = repository.Refresh(context.Background(), sc.SoundCronID)
+							if err != nil {
+								slog.Error("failed to refresh sound cron", "error", err)
+							}
 						},
 					}
 					job.Schedule()
+					log.Printf("scheduled the job")
 				}
 			case <-time.After(5 * time.Minute):
 			}

@@ -21,6 +21,8 @@ import (
 type ReadyHandler = func(*discordgo.Session, *discordgo.Ready)
 type InteractionCreateHandler = func(*discordgo.Session, *discordgo.InteractionCreate)
 
+var EmptyInteractionCreateHandler InteractionCreateHandler = func(*discordgo.Session, *discordgo.InteractionCreate) {}
+
 var ReadyLog = func(s *discordgo.Session, r *discordgo.Ready) {
 	username := r.User.Username
 	userID := r.User.ID
@@ -204,7 +206,7 @@ func MakeInteractionCreateHandler(
 		httpClient:  http.DefaultClient,
 	}
 
-	uuidGenerator := generator.UUIDGenerator{}
+	uuidGenerator := generator.UUIDV4Generator{}
 
 	addFileHandler := AddFileHandler{
 		Repo:          repo,
@@ -295,7 +297,7 @@ func MakeInteractionCreateHandler(
 type AddFileHandler struct {
 	Repo          repository.SoundCronRepository
 	AudioPiper    *AudioPiper
-	UUIDGenerator generator.UUIDGenerator
+	UUIDGenerator generator.UUIDV4Generator
 }
 
 func (h *AddFileHandler) Handle(
@@ -348,9 +350,9 @@ func (h *AddFileHandler) Handle(
 		return fmt.Errorf("failed to pipe audio: %w", err)
 	}
 
-	err = h.Repo.Save(ctx, soundCron)
+	err = h.AudioPiper.Pipe(ctx, soundCron.ID, addFileRequest.Attachment.URL)
 	if err != nil {
-		return fmt.Errorf("failed to save soundcron: %w", err)
+		return fmt.Errorf("failed to pipe audio: %w", err)
 	}
 
 	return nil
@@ -361,14 +363,17 @@ type Handlers struct {
 	InteractionCreate InteractionCreateHandler
 }
 
+const intents = discordgo.IntentGuilds | discordgo.IntentGuildMembers | discordgo.IntentGuildVoiceStates
+
 func NewSession(token string, handlers Handlers) (*discordgo.Session, error) {
 	s, err := discordgo.New("Bot " + token)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error constructing discordgo session: %w", err)
 	}
 
 	s.AddHandler(handlers.Ready)
 	s.AddHandler(handlers.InteractionCreate)
 
+	s.Identify.Intents = intents
 	return s, nil
 }

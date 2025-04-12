@@ -3,12 +3,12 @@ package voice
 import (
 	"context"
 	"fmt"
-	"log"
+	"io"
 	"log/slog"
-	"os/exec"
+	"net/http"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/jogramming/dca"
+	"github.com/glizzus/sound-off/internal/dca"
 )
 
 // MaxAttendedChannel returns the channel with the most members in it.
@@ -31,22 +31,18 @@ func MaxAttendedChannel(channels []*discordgo.Channel) *discordgo.Channel {
 	return maxAttendedChannel
 }
 
+// VoiceChannelFunc is a function type that takes a discordgo session and a voice connection.
 type VoiceChannelFunc func(*discordgo.Session, *discordgo.VoiceConnection) error
 
 // WithVoiceChannel is a utility function
 // that joins a voice channel and executes a callback.
 // It handles the voice state updates for you.
 func WithVoiceChannel(s *discordgo.Session, guildId, channelID string, callback VoiceChannelFunc) error {
-	log.Printf("ID: " + s.State.User.ID)
-	log.Printf("Channel ID: " + channelID)
 	voiceConn, err := s.ChannelVoiceJoin(guildId, channelID, false, true)
 	if err != nil {
 		return fmt.Errorf("unable to join the voice channel: %w", err)
 	}
 
-	if err := voiceConn.Speaking(true); err != nil {
-		return fmt.Errorf("error setting speaking state to 'true': %w", err)
-	}
 	defer func() {
 		if err := voiceConn.Speaking(false); err != nil {
 			slog.Error("failed to stop speaking", "error", err)
@@ -57,6 +53,10 @@ func WithVoiceChannel(s *discordgo.Session, guildId, channelID string, callback 
 		}
 	}()
 
+	if err := voiceConn.Speaking(true); err != nil {
+		return fmt.Errorf("error setting speaking state to 'true': %w", err)
+	}
+
 	if err = callback(s, voiceConn); err != nil {
 		return fmt.Errorf("error executing callback: %w", err)
 	}
@@ -64,36 +64,54 @@ func WithVoiceChannel(s *discordgo.Session, guildId, channelID string, callback 
 	return nil
 }
 
-func StreamDCAOnTheFly(ctx context.Context, audioURL string) (*dca.EncodeSession, error) {
-	// TODO: Require absolute paths for ffmpeg
-	ffmpeg := exec.CommandContext(ctx, "ffmpeg",
-		"-i", audioURL,
-		"-f", "s16le",
-		"-ar", "48000",
-		"-ac", "2",
-		"pipe:1",
-	)
+type DCAStreamer interface {
+	StreamDCAOnTheFly(ctx context.Context, audioURL string) (*dca.EncodeSession, error)
+}
 
-	ffmpegStdout, err := ffmpeg.StdoutPipe()
+type FFmpegDCAStreamer struct {
+	urlReader URLReader
+}
+
+func NewFFmpegDCAStreamer(urlReader URLReader) *FFmpegDCAStreamer {
+	return &FFmpegDCAStreamer{
+		urlReader: urlReader,
+	}
+}
+
+type URLReader interface {
+	ReadURL(ctx context.Context, url string) (io.ReadCloser, error)
+}
+
+type HTTPURLReader struct {
+	Client *http.Client
+}
+
+func (r *HTTPURLReader) ReadURL(ctx context.Context, url string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("unable to pipe output of ffmpeg to stdout: %w", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	ffmpeg.Stderr = nil
-
-	if err := ffmpeg.Start(); err != nil {
-		return nil, fmt.Errorf("unable to start ffmpeg process: %w", err)
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error response from server: %s", resp.Status)
+	}
+
+	return resp.Body, nil
+}
+
+func (s *FFmpegDCAStreamer) StreamDCAOnTheFly(ctx context.Context, audioURL string) (*dca.EncodeSession, error) {
 
 	options := dca.StdEncodeOptions
-	options.RawOutput = true
 	options.Bitrate = 96
-	options.Application = "audio"
-	options.Volume = 256
 
-	encodeSession, err := dca.EncodeMem(ffmpegStdout, options)
+	encodeSession, err := dca.EncodeFile(audioURL, options)
 	if err != nil {
-		return nil, fmt.Errorf("unable to encode dca from memory: %w", err)
+		return nil, fmt.Errorf("error encoding audio: %w", err)
 	}
 
 	return encodeSession, nil
