@@ -14,11 +14,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/glizzus/sound-off/internal/config"
 	"github.com/glizzus/sound-off/internal/datalayer"
+	"github.com/glizzus/sound-off/internal/dca"
 	"github.com/glizzus/sound-off/internal/handler"
 	"github.com/glizzus/sound-off/internal/repository"
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/voice"
-	"github.com/glizzus/sound-off/internal/dca"
 )
 
 func runBotForever() error {

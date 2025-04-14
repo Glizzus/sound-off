@@ -18,6 +18,18 @@ import (
 	"github.com/glizzus/sound-off/internal/util"
 )
 
+const (
+	ComponentIDIntervalSelect = "interval_select"
+)
+
+const (
+	ModalIDCustomCronModal = "custom_cron_modal"
+)
+
+const (
+	TextInputIDCronInput = "cron_input"
+)
+
 type ReadyHandler = func(*discordgo.Session, *discordgo.Ready)
 type InteractionCreateHandler = func(*discordgo.Session, *discordgo.InteractionCreate)
 
@@ -62,9 +74,6 @@ func CommandToAddFileRequest(
 		}
 	}
 
-	if cron == "" {
-		return nil, fmt.Errorf("cron option is required")
-	}
 	if name == "" {
 		name = attachment.Filename
 	}
@@ -196,6 +205,8 @@ func DoListSoundCrons(
 	return nil
 }
 
+var sessions = make(map[string]*SoundCronAddFileRequest)
+
 func MakeInteractionCreateHandler(
 	repo *repository.PostgresSoundCronRepository,
 	blobStorage datalayer.BlobStorage,
@@ -215,80 +226,178 @@ func MakeInteractionCreateHandler(
 	}
 
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		command := i.ApplicationCommandData()
-		switch command.Name {
-		case "ping":
-			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "Pong!",
-				},
-			})
-			if err != nil {
-				slog.Error("Failed to respond to ping command", "error", err)
-			}
-		case "soundcron":
-			if len(command.Options) == 0 {
-				slog.Warn("No options provided for soundcron command")
-				return
-			}
-			subCommand := command.Options[0]
-			switch subCommand.Name {
-			case "list":
-				err := DoListSoundCrons(s, i, repo)
+		switch i.Type {
+		case discordgo.InteractionApplicationCommand:
+			command := i.ApplicationCommandData()
+			switch command.Name {
+			case "ping":
+				err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Pong!",
+					},
+				})
 				if err != nil {
-					slog.Warn("Failed to list soundcrons", "error", err)
+					slog.Error("Failed to respond to ping command", "error", err)
+				}
+			case "soundcron":
+				if len(command.Options) == 0 {
+					slog.Warn("No options provided for soundcron command")
 					return
 				}
-			case "add":
-				if len(subCommand.Options) == 0 {
-					slog.Warn("No subcommand provided for soundcron add command")
-					return
-				}
-				subCommandGroup := subCommand.Options[0]
-				switch subCommandGroup.Name {
-				case "file":
-					addFileRequest, err := CommandToAddFileRequest(
-						command.Resolved.Attachments,
-						subCommandGroup.Options,
-					)
+				subCommand := command.Options[0]
+				switch subCommand.Name {
+				case "list":
+					err := DoListSoundCrons(s, i, repo)
 					if err != nil {
-						slog.Warn("Failed to parse add file request", "error", err)
-						err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-							Type: discordgo.InteractionResponseChannelMessageWithSource,
-							Data: &discordgo.InteractionResponseData{
-								Content: "Invalid request format",
-							},
-						})
-						if err != nil {
-							slog.Error("Failed to respond to interaction", "error", err)
-						}
+						slog.Warn("Failed to list soundcrons", "error", err)
+						return
 					}
+				case "add":
+					if len(subCommand.Options) == 0 {
+						slog.Warn("No subcommand provided for soundcron add command")
+						return
+					}
+					subCommandGroup := subCommand.Options[0]
+					switch subCommandGroup.Name {
+					case "file":
+						addFileRequest, err := CommandToAddFileRequest(
+							command.Resolved.Attachments,
+							subCommandGroup.Options,
+						)
+						if err != nil {
+							slog.Warn("Failed to parse add file request", "error", err)
+							err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+								Type: discordgo.InteractionResponseChannelMessageWithSource,
+								Data: &discordgo.InteractionResponseData{
+									Content: "Invalid request format",
+								},
+							})
+							if err != nil {
+								slog.Error("Failed to respond to interaction", "error", err)
+							}
+						}
 
-					err = addFileHandler.Handle(
-						i.GuildID,
-						addFileRequest,
-					)
-					if err != nil {
-						errorMessage := "Internal server error - please try again later"
-						var ue *UserError
-						if errors.As(err, &ue) {
-							errorMessage = ue.Message
+						var userID string
+						if i.Member != nil {
+							userID = i.Member.User.ID
 						} else {
-							slog.Error("Failed to handle add file request", "error", err)
+							slog.Warn("No member information in interaction")
+							return
 						}
-						err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-							Type: discordgo.InteractionResponseChannelMessageWithSource,
-							Data: &discordgo.InteractionResponseData{
-								Content: errorMessage,
-								Flags:   discordgo.MessageFlagsEphemeral,
-							},
-						})
-						if err != nil {
-							slog.Error("Failed to respond to interaction", "error", err)
+
+						var response *discordgo.InteractionResponse
+						if addFileRequest.Cron == "" {
+							sessions[userID] = addFileRequest
+
+							menu := discordgo.SelectMenu{
+								CustomID:    ComponentIDIntervalSelect,
+								Placeholder: "Select an interval",
+								Options: []discordgo.SelectMenuOption{
+									{
+										Label: "Every hour",
+										Value: "@hourly",
+									},
+									{
+										Label: "Cron (Custom)",
+										Value: "cron",
+									},
+								},
+							}
+							row := discordgo.ActionsRow{
+								Components: []discordgo.MessageComponent{menu},
+							}
+							respData := discordgo.InteractionResponseData{
+								Content:    "Choose an interval for your SoundCron:",
+								Components: []discordgo.MessageComponent{row},
+							}
+							response = &discordgo.InteractionResponse{
+								Type: discordgo.InteractionResponseChannelMessageWithSource,
+								Data: &respData,
+							}
+						} else {
+							err = addFileHandler.ProcessAddSoundCron(
+								i.GuildID,
+								addFileRequest,
+							)
+							if err != nil {
+								errorMessage := "Internal server error - please try again later"
+								var ue *UserError
+								if errors.As(err, &ue) {
+									errorMessage = ue.Message
+								} else {
+									slog.Error("Failed to handle add file request", "error", err)
+								}
+								response = &discordgo.InteractionResponse{
+									Type: discordgo.InteractionResponseChannelMessageWithSource,
+									Data: &discordgo.InteractionResponseData{
+										Content: errorMessage,
+										Flags:   discordgo.MessageFlagsEphemeral,
+									},
+								}
+							}
+						}
+
+						if response == nil {
+							slog.Warn("discord response struct is nil")
+						} else {
+							err = s.InteractionRespond(i.Interaction, response)
+							if err != nil {
+								slog.Warn("failed to respond to add request", "error", err)
+							}
 						}
 					}
 				}
+			}
+		case discordgo.InteractionMessageComponent:
+			component := i.MessageComponentData()
+			switch component.CustomID {
+			case ComponentIDIntervalSelect:
+				modalData := discordgo.InteractionResponseData{
+					CustomID: ModalIDCustomCronModal,
+					Title:    "Enter Cron Expression",
+					Components: []discordgo.MessageComponent{
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								// TODO: min-max length
+								discordgo.TextInput{
+									CustomID: TextInputIDCronInput,
+									Label:    "Cron Expression",
+									Style:    discordgo.TextInputShort,
+									Required: true,
+								},
+							},
+						},
+					},
+				}
+				response := &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseModal,
+					Data: &modalData,
+				}
+				err := s.InteractionRespond(i.Interaction, response)
+				if err != nil {
+					slog.Warn("failed to respond to component", "error", err)
+				}
+			}
+		case discordgo.InteractionModalSubmit:
+			modal := i.ModalSubmitData()
+			switch modal.CustomID {
+			case ModalIDCustomCronModal:
+				components := modal.Components
+				if len(components) == 0 {
+					slog.Warn("no components found")
+					return
+				}
+				// TODO: Prevent panics
+				row := components[0].(*discordgo.ActionsRow)
+				cronInput := row.Components[0].(*discordgo.TextInput)
+				cronExpr := cronInput.Value
+
+				userID := i.Member.User.ID
+
+				addFileRequest := sessions[userID]
+				addFileRequest.Cron = cronExpr
+				addFileHandler.Handle(s, i, addFileRequest)
 			}
 		}
 	}
@@ -300,7 +409,34 @@ type AddFileHandler struct {
 	UUIDGenerator generator.UUIDV4Generator
 }
 
+var SoundCronAddDeferredResponse = &discordgo.InteractionResponse{
+	Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	Data: &discordgo.InteractionResponseData{
+		Content: "Waiting!",
+	},
+}
+
+var FinalResponseContent = "Done!"
+var SoundCronAddFinalResponse = &discordgo.WebhookEdit{
+	Content: &FinalResponseContent,
+}
+
 func (h *AddFileHandler) Handle(
+	session *discordgo.Session,
+	interaction *discordgo.InteractionCreate,
+	addFileRequest *SoundCronAddFileRequest,
+) {
+	err := session.InteractionRespond(interaction.Interaction, SoundCronAddDeferredResponse)
+	fmt.Println(err)
+
+	err = h.ProcessAddSoundCron(interaction.GuildID, addFileRequest)
+	fmt.Println(err)
+
+	_, err = session.InteractionResponseEdit(interaction.Interaction, SoundCronAddFinalResponse)
+	fmt.Println(err)
+}
+
+func (h *AddFileHandler) ProcessAddSoundCron(
 	guildID string,
 	addFileRequest *SoundCronAddFileRequest,
 ) error {
