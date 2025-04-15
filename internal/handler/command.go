@@ -11,7 +11,7 @@ var baseAddCommandOptions = []*discordgo.ApplicationCommandOption{
 		Name:        "cron",
 		Type:        discordgo.ApplicationCommandOptionString,
 		Description: "The cron expression for the soundcron.",
-		Required:    true,
+		Required:    false,
 	},
 	{
 		Name:        "name",

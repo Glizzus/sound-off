@@ -47,11 +47,30 @@ func (s *MinioStorage) EnsureBucket(ctx context.Context) error {
 	err := s.client.MakeBucket(ctx, s.bucket, minio.MakeBucketOptions{})
 	// If the bucket is already owned, succeed
 	if err != nil {
-		if minio.ToErrorResponse(err).Code == "BucketAlreadyOwnedByYou" {
-			return nil
+		if minio.ToErrorResponse(err).Code != "BucketAlreadyOwnedByYou" {
+			return err
 		}
+	}
+	policyJSON := `
+	{
+		"Version": "2012-10-17",
+		"Statement": [
+			{
+				"Effect": "Allow",
+				"Principal": "*",
+				"Action": ["s3:GetObject"],
+				"Resource": ["arn:aws:s3:::` + s.bucket + `/*"]
+
+			}
+		]
+	}
+	`
+
+	err = s.client.SetBucketPolicy(ctx, s.bucket, policyJSON)
+	if err != nil {
 		return err
 	}
+
 	return nil
 }
 

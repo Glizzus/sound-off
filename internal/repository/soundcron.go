@@ -7,6 +7,7 @@ import (
 
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,6 +26,12 @@ type SoundCronJob struct {
 	RunTime     time.Time
 }
 
+type SoundCronJobRow struct {
+	ID          string
+	SoundCronID string
+	RunTime     time.Time
+}
+
 type SoundCronLister interface {
 	List(ctx context.Context, guildID string) ([]SoundCron, error)
 }
@@ -37,10 +44,15 @@ type SoundCronJobPuller interface {
 	Pull(ctx context.Context, within time.Time) ([]SoundCronJob, error)
 }
 
+type SoundCronRefresher interface {
+	Refresh(ctx context.Context, soundCronID string) error
+}
+
 type SoundCronRepository interface {
 	SoundCronPersister
 	SoundCronLister
 	SoundCronJobPuller
+	SoundCronRefresher
 }
 
 type PostgresSoundCronRepository struct {
@@ -61,7 +73,21 @@ func SoundCronToRowParams(soundCron SoundCron) []any {
 	}
 }
 
+type pgxExecer interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
 func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundCron) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
+			fmt.Printf("failed to rollback transaction: %v\n", err)
+		}
+	}()
+
 	const soundCronQuery = `
 	INSERT INTO soundcron (id, soundcron_name, guild_id, cron, file_size)
 	VALUES ($1, $2, $3, $4, $5)
@@ -73,35 +99,14 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 		file_size = EXCLUDED.file_size;
 	`
 
-	nextTimes, err := schedule.NextRunTimes(soundCron.Cron, 5)
-	if err != nil {
-		return fmt.Errorf("failed to get next run times: %w", err)
-	}
-
-	const soundCronJobsQuery = `
-	INSERT INTO soundcron_job (soundcron_id, run_time)
-	SELECT $1, unnest($2::timestamp[])
-	ON CONFLICT (soundcron_id, run_time) DO NOTHING
-	`
-
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
-			fmt.Printf("failed to rollback transaction: %v\n", err)
-		}
-	}()
-
 	_, err = tx.Exec(ctx, soundCronQuery, SoundCronToRowParams(soundCron)...)
 	if err != nil {
 		return fmt.Errorf("failed to execute sound cron query: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, soundCronJobsQuery, soundCron.ID, nextTimes)
+	err = doRefresh(ctx, tx, soundCron.ID, soundCron.Cron)
 	if err != nil {
-		return fmt.Errorf("failed to execute sound cron jobs query: %w", err)
+		return fmt.Errorf("failed to refresh sound cron: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -141,12 +146,14 @@ func (r *PostgresSoundCronRepository) List(ctx context.Context, guildID string) 
 
 func (r *PostgresSoundCronRepository) Pull(ctx context.Context, within time.Time) ([]SoundCronJob, error) {
 	const query = `
-	DELETE FROM soundcron_job scj
-	USING soundcron sc
+	UPDATE soundcron_job AS scj
+	SET picked_up_at = now()
+	FROM soundcron AS sc
 	WHERE scj.soundcron_id = sc.id
 		AND scj.run_time > now()
-		AND scj.run_time < $1
-	RETURNING sc.id, sc.soundcron_name, sc.guild_id, scj.run_time
+		AND scj.run_time <= $1
+		AND scj.picked_up_at IS NULL
+	RETURNING scj.soundcron_id, sc.soundcron_name, sc.guild_id, scj.run_time
 	`
 
 	rows, err := r.db.Query(ctx, query, within.UTC())
@@ -167,6 +174,47 @@ func (r *PostgresSoundCronRepository) Pull(ctx context.Context, within time.Time
 		return nil, fmt.Errorf("failed to iterate over rows: %w", err)
 	}
 	return soundCronJobs, nil
+}
+
+func doRefresh(ctx context.Context, execer pgxExecer, soundCronID, cron string) error {
+	nextRunTimes, err := schedule.NextRunTimes(cron, 5)
+	if err != nil {
+		return fmt.Errorf("failed to get next run times: %w", err)
+	}
+
+	const query = `
+	INSERT INTO soundcron_job (soundcron_id, run_time)
+	SELECT $1, unnest($2::timestamp[])
+	ON CONFLICT (soundcron_id, run_time) DO NOTHING
+	`
+
+	_, err = execer.Exec(ctx, query, soundCronID, nextRunTimes)
+	if err != nil {
+		return fmt.Errorf("failed to execute sound cron jobs query: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresSoundCronRepository) Refresh(ctx context.Context, soundCronID string) error {
+	const getCronQuery = `
+	SELECT cron
+	FROM soundcron
+	WHERE id = $1
+	`
+	var cron string
+	err := r.db.QueryRow(ctx, getCronQuery, soundCronID).Scan(&cron)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("sound cron not found: %w", err)
+		}
+		return fmt.Errorf("failed to query sound cron: %w", err)
+	}
+
+	err = doRefresh(ctx, r.db, soundCronID, cron)
+	if err != nil {
+		return fmt.Errorf("failed to refresh sound cron: %w", err)
+	}
+	return nil
 }
 
 var _ SoundCronRepository = (*PostgresSoundCronRepository)(nil)
