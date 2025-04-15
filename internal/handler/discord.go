@@ -13,13 +13,14 @@ import (
 
 	"github.com/glizzus/sound-off/internal/datalayer"
 	"github.com/glizzus/sound-off/internal/generator"
+	"github.com/glizzus/sound-off/internal/presenters"
 	"github.com/glizzus/sound-off/internal/repository"
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/util"
 )
 
 const (
-	ComponentIDIntervalSelect = "interval_select"
+	ComponentIDIntervalSelect  = "interval_select"
 )
 
 const (
@@ -170,8 +171,29 @@ func (a *AudioPiper) Pipe(ctx context.Context, key, sourceURL string) error {
 	return nil
 }
 
+type SimpleResponder interface {
+	InteractionRespond(
+		*discordgo.Interaction,
+		*discordgo.InteractionResponse,
+		...discordgo.RequestOption,
+	) error
+}
+
+var _ SimpleResponder = (*discordgo.Session)(nil)
+
+type DeferredResponder interface {
+	SimpleResponder
+	InteractionResponseEdit(
+		*discordgo.Interaction,
+		*discordgo.WebhookEdit,
+		...discordgo.RequestOption,
+	) (*discordgo.Message, error)
+}
+
+var _ DeferredResponder = (*discordgo.Session)(nil)
+
 func DoListSoundCrons(
-	s *discordgo.Session,
+	s SimpleResponder,
 	i *discordgo.InteractionCreate,
 	lister repository.SoundCronLister,
 ) error {
@@ -181,24 +203,10 @@ func DoListSoundCrons(
 	if err != nil {
 		return fmt.Errorf("failed to list soundcrons: %w", err)
 	}
-	if len(soundCrons) == 0 {
-		return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "No soundcrons found",
-			},
-		})
-	}
-	var responseContent string
-	for _, sc := range soundCrons {
-		responseContent += fmt.Sprintf("Name: %s, ID: %s\n", sc.Name, sc.ID)
-	}
-	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: responseContent,
-		},
-	})
+
+	response := presenters.BuildListSoundCronsResponse(soundCrons)
+
+	err = s.InteractionRespond(i.Interaction, response)
 	if err != nil {
 		return fmt.Errorf("failed to respond to interaction: %w", err)
 	}
