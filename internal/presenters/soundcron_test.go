@@ -11,12 +11,12 @@ import (
 
 func TestBuildListSoundCronsResponse(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		input []repository.SoundCron
-		want *discordgo.InteractionResponse
+		want  *discordgo.InteractionResponse
 	}{
 		{
-			name: "no soundcrons",
+			name:  "no soundcrons",
 			input: []repository.SoundCron{},
 			want: &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -46,9 +46,9 @@ func TestBuildListSoundCronsResponse(t *testing.T) {
 							Components: []discordgo.MessageComponent{
 								discordgo.SelectMenu{
 									CustomID:    "soundcron_select_menu",
-									Placeholder:  "Select a soundcron",
-									MinValues:    &[]int{1}[0],
-									MaxValues:    1,
+									Placeholder: "Select a soundcron",
+									MinValues:   &[]int{1}[0],
+									MaxValues:   1,
 									Options: []discordgo.SelectMenuOption{
 										{
 											Label: "Test SoundCron 1",

@@ -55,7 +55,7 @@ func runBotForever() error {
 		return fmt.Errorf("failed to ensure minio bucket: %w", err)
 	}
 
-	interactionHandler := handler.MakeInteractionCreateHandler(repository, minioStorage)
+	interactionHandler := handler.NewDiscordInteractionHandler(repository, minioStorage)
 
 	session, err := handler.NewSession(config.Token, handler.Handlers{
 		Ready:             handler.ReadyLog,

@@ -30,11 +30,11 @@ func buildSoundCronSelectMenu(soundCrons []repository.SoundCron) *discordgo.Inte
 	}
 
 	menu := discordgo.SelectMenu{
-		CustomID: ComponentIDSoundCronSelect,
+		CustomID:    ComponentIDSoundCronSelect,
 		Placeholder: "Select a soundcron",
-		MinValues: &soundCronSelectMinValues,
-		MaxValues: 1,
-		Options: options,
+		MinValues:   &soundCronSelectMinValues,
+		MaxValues:   1,
+		Options:     options,
 	}
 
 	row := discordgo.ActionsRow{
