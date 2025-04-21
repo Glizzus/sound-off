@@ -6,6 +6,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/glizzus/sound-off/internal/generator"
 	"github.com/glizzus/sound-off/internal/handler"
 )
 
@@ -38,7 +39,7 @@ func TestInteractionCreatePing(t *testing.T) {
 		},
 	}
 
-	handler := handler.NewInteractionHandler(nil, nil)
+	handler := handler.NewInteractionHandler(nil, nil, &generator.UUIDV4Generator{})
 	handler(session, interaction)
 
 	expectedSession := &mockSession{

@@ -5,6 +5,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/glizzus/sound-off/e2e"
+	"github.com/glizzus/sound-off/internal/generator"
 	"github.com/glizzus/sound-off/internal/handler"
 	"github.com/glizzus/sound-off/internal/repository"
 	"github.com/google/go-cmp/cmp"
@@ -35,6 +36,14 @@ func seedTestData(t *testing.T, repo *repository.PostgresSoundCronRepository) {
 	}
 }
 
+type determinsticIDGenerator struct{}
+
+func (d *determinsticIDGenerator) Next() (string, error) {
+	return "determinism", nil
+}
+
+var _ generator.Generator[string] = (*determinsticIDGenerator)(nil)
+
 func TestSoundCronList(t *testing.T) {
 	connStr := e2e.UsePostgres(t)
 	repo := e2e.GetRepository(t, connStr)
@@ -60,7 +69,7 @@ func TestSoundCronList(t *testing.T) {
 
 		session := &mockSession{}
 
-		handler := handler.NewInteractionHandler(repo, nil)
+		handler := handler.NewInteractionHandler(repo, nil, &determinsticIDGenerator{})
 		handler(session, slashCommandInteraction)
 
 		expected := &discordgo.InteractionResponse{
@@ -71,7 +80,7 @@ func TestSoundCronList(t *testing.T) {
 					discordgo.ActionsRow{
 						Components: []discordgo.MessageComponent{
 							discordgo.SelectMenu{
-								CustomID:    "soundcron_select_menu",
+								CustomID:    "soundcron_select_menu:determinism",
 								Placeholder: "Select a soundcron",
 								MinValues:   &[]int{1}[0],
 								MaxValues:   1,

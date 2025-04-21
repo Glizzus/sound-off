@@ -23,14 +23,14 @@ var soundCronSelectMinValues = 1
 
 const ComponentIDSoundCronSelect = "soundcron_select_menu"
 
-func buildSoundCronSelectMenu(soundCrons []repository.SoundCron) *discordgo.InteractionResponse {
+func buildSoundCronSelectMenu(soundCrons []repository.SoundCron, instanceID string) *discordgo.InteractionResponse {
 	var options []discordgo.SelectMenuOption
 	for _, sc := range soundCrons {
 		options = append(options, soundCronToSelectMenuOption(sc))
 	}
 
 	menu := discordgo.SelectMenu{
-		CustomID:    ComponentIDSoundCronSelect,
+		CustomID:    ComponentIDSoundCronSelect + ":" + instanceID,
 		Placeholder: "Select a soundcron",
 		MinValues:   &soundCronSelectMinValues,
 		MaxValues:   1,
@@ -54,10 +54,10 @@ func buildSoundCronSelectMenu(soundCrons []repository.SoundCron) *discordgo.Inte
 	}
 }
 
-func BuildListSoundCronsResponse(soundCrons []repository.SoundCron) *discordgo.InteractionResponse {
+func BuildListSoundCronsResponse(soundCrons []repository.SoundCron, instanceID string) *discordgo.InteractionResponse {
 	if len(soundCrons) == 0 {
 		return noSoundCronFoundResponse
 	}
 
-	return buildSoundCronSelectMenu(soundCrons)
+	return buildSoundCronSelectMenu(soundCrons, instanceID)
 }

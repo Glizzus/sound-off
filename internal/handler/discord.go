@@ -185,33 +185,12 @@ type DiscordSession interface {
 
 var _ DiscordSession = (*discordgo.Session)(nil)
 
-func DoListSoundCrons(
-	s DiscordSession,
-	i *discordgo.InteractionCreate,
-	lister repository.SoundCronLister,
-) error {
-	ctx := context.Background()
-
-	soundCrons, err := lister.List(ctx, i.GuildID)
-	if err != nil {
-		return fmt.Errorf("failed to list soundcrons: %w", err)
-	}
-
-	response := presenters.BuildListSoundCronsResponse(soundCrons)
-
-	err = s.InteractionRespond(i.Interaction, response)
-	if err != nil {
-		return fmt.Errorf("failed to respond to interaction: %w", err)
-	}
-	return nil
-}
-
 var sessions = make(map[string]*SoundCronAddFileRequest)
 
 type HandlerContext struct {
 	Repo           *repository.PostgresSoundCronRepository
 	AudioPiper     *AudioPiper
-	UUIDGenerator  generator.UUIDV4Generator
+	UUIDGenerator  generator.Generator[string]
 	AddFileHandler *AddFileHandler
 }
 
@@ -221,7 +200,8 @@ func NewDiscordInteractionHandler(
 	repo *repository.PostgresSoundCronRepository,
 	blobStorage datalayer.BlobStorage,
 ) func(*discordgo.Session, *discordgo.InteractionCreate) {
-	internalHandler := NewInteractionHandler(repo, blobStorage)
+	uuidGenerator := &generator.UUIDV4Generator{}
+	internalHandler := NewInteractionHandler(repo, blobStorage, uuidGenerator)
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		internalHandler(s, i)
 	}
@@ -230,28 +210,135 @@ func NewDiscordInteractionHandler(
 func NewInteractionHandler(
 	repo *repository.PostgresSoundCronRepository,
 	blobStorage datalayer.BlobStorage,
+	idGenerator generator.Generator[string],
 ) func(DiscordSession, *discordgo.InteractionCreate) {
 	audioPiper := &AudioPiper{
 		blobStorage: blobStorage,
 		httpClient:  http.DefaultClient,
 	}
 
-	uuidGenerator := generator.UUIDV4Generator{}
-
 	addFileHandler := &AddFileHandler{
 		Repo:          repo,
 		AudioPiper:    audioPiper,
-		UUIDGenerator: uuidGenerator,
+		UUIDGenerator: idGenerator,
 	}
 
 	handlerCtx := &HandlerContext{
 		Repo:           repo,
 		AudioPiper:     audioPiper,
-		UUIDGenerator:  uuidGenerator,
+		UUIDGenerator:  idGenerator,
 		AddFileHandler: addFileHandler,
 	}
 
+	flowManager := NewFlowManager(idGenerator)
+
+	flowManager.RegisterFlow(&Flow{
+		ID: "ping",
+		Root: &Node{
+			ID: "ping_slash_command",
+			Matcher: func(i *discordgo.InteractionCreate) bool {
+				if i.Type != discordgo.InteractionApplicationCommand {
+					return false
+				}
+				return i.ApplicationCommandData().Name == "ping"
+			},
+			Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
+				err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Pong!",
+					},
+				})
+				if err != nil {
+					slog.Error("Failed to respond to ping command", "error", err)
+				}
+				return nil
+			},
+		},
+	})
+
+	flowManager.RegisterFlow(&Flow{
+		ID: "soundcron_list",
+		Root: &Node{
+			ID: "soundcron_list_slash_command",
+			Matcher: func(i *discordgo.InteractionCreate) bool {
+				if i.Type != discordgo.InteractionApplicationCommand {
+					return false
+				}
+				data := i.ApplicationCommandData()
+				return data.Name == "soundcron" &&
+					len(data.Options) > 0 && data.Options[0].Name == "list"
+			},
+			Handler: func(s DiscordSession, i *discordgo.InteractionCreate, flowContext *FlowContext) error {
+				ctx := context.Background()
+
+				soundCrons, err := repo.List(ctx, i.GuildID)
+				if err != nil {
+					return fmt.Errorf("failed to list soundcrons: %w", err)
+				}
+
+				response := presenters.BuildListSoundCronsResponse(soundCrons, flowContext.InstanceID)
+				err = s.InteractionRespond(i.Interaction, response)
+				if err != nil {
+					return fmt.Errorf("failed to respond to interaction: %w", err)
+				}
+				flowContext.State["soundcrons"] = soundCrons
+				fmt.Println("Soundcrons:", soundCrons)
+				return nil
+			},
+			Next: []*Node{
+				{
+					ID: "soundcron_list_select_menu",
+					Matcher: func(i *discordgo.InteractionCreate) bool {
+						fmt.Println("Interaction type:", i.Type)
+						fmt.Println("Interaction data:", i.Data)
+						if i.Type != discordgo.InteractionMessageComponent {
+							return false
+						}
+						fmt.Println("Checking if interaction is a select menu")
+						fmt.Println("CustomID:", i.MessageComponentData().CustomID)
+						return i.MessageComponentData().CustomID == presenters.ComponentIDSoundCronSelect
+					},
+					Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
+						fmt.Println("Handling soundcron list select menu")
+						component := i.MessageComponentData()
+						selectedID := component.Values[0]
+
+						soundCrons, ok := ctx.State["soundcrons"].([]repository.SoundCron)
+						if !ok {
+							return fmt.Errorf("failed to get soundcrons from context")
+						}
+
+						var selectedSoundCron *repository.SoundCron
+						for _, sc := range soundCrons {
+							if sc.ID == selectedID {
+								selectedSoundCron = &sc
+								break
+							}
+						}
+						if selectedSoundCron == nil {
+							return fmt.Errorf("failed to find soundcron with ID %s", selectedID)
+						}
+
+						err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+							Type: discordgo.InteractionResponseChannelMessageWithSource,
+							Data: &discordgo.InteractionResponseData{
+								Content: fmt.Sprintf("Selected SoundCron: %s", selectedSoundCron.Name),
+							},
+						})
+						if err != nil {
+							return fmt.Errorf("failed to respond to interaction: %w", err)
+						}
+						return nil
+					},
+				},
+			},
+		},
+	})
+
 	return func(s DiscordSession, i *discordgo.InteractionCreate) {
+		flowManager.Router(s, i)
+
 		HandleInteractionCreate(handlerCtx, s, i)
 	}
 }
@@ -268,22 +355,11 @@ func HandleInteractionCreate(
 	i *discordgo.InteractionCreate,
 ) {
 	addFileHandler := handlerCtx.AddFileHandler
-	repo := handlerCtx.Repo
 
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
 		command := i.ApplicationCommandData()
 		switch command.Name {
-		case "ping":
-			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "Pong!",
-				},
-			})
-			if err != nil {
-				slog.Error("Failed to respond to ping command", "error", err)
-			}
 		case "soundcron":
 			if len(command.Options) == 0 {
 				slog.Warn("No options provided for soundcron command")
@@ -291,12 +367,6 @@ func HandleInteractionCreate(
 			}
 			subCommand := command.Options[0]
 			switch subCommand.Name {
-			case "list":
-				err := DoListSoundCrons(s, i, repo)
-				if err != nil {
-					slog.Warn("Failed to list soundcrons", "error", err)
-					return
-				}
 			case "add":
 				if len(subCommand.Options) == 0 {
 					slog.Warn("No subcommand provided for soundcron add command")
@@ -422,6 +492,7 @@ func HandleInteractionCreate(
 			if err != nil {
 				slog.Warn("failed to respond to component", "error", err)
 			}
+		case presenters.ComponentIDSoundCronSelect:
 		}
 	case discordgo.InteractionModalSubmit:
 		modal := i.ModalSubmitData()
@@ -450,7 +521,7 @@ func HandleInteractionCreate(
 type AddFileHandler struct {
 	Repo          repository.SoundCronRepository
 	AudioPiper    *AudioPiper
-	UUIDGenerator generator.UUIDV4Generator
+	UUIDGenerator generator.Generator[string]
 }
 
 var SoundCronAddDeferredResponse = &discordgo.InteractionResponse{

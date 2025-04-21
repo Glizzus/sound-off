@@ -45,7 +45,7 @@ func TestBuildListSoundCronsResponse(t *testing.T) {
 						discordgo.ActionsRow{
 							Components: []discordgo.MessageComponent{
 								discordgo.SelectMenu{
-									CustomID:    "soundcron_select_menu",
+									CustomID:    "soundcron_select_menu:test-sc-1",
 									Placeholder: "Select a soundcron",
 									MinValues:   &[]int{1}[0],
 									MaxValues:   1,
@@ -69,7 +69,7 @@ func TestBuildListSoundCronsResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := presenters.BuildListSoundCronsResponse(tt.input)
+			got := presenters.BuildListSoundCronsResponse(tt.input, "test-sc-1")
 			diff := cmp.Diff(got, tt.want)
 			if diff != "" {
 				t.Errorf("BuildListSoundCronsResponse() mismatch (-want +got):\n%s", diff)
