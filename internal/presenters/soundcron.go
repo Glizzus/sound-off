@@ -61,3 +61,42 @@ func BuildListSoundCronsResponse(soundCrons []repository.SoundCron, instanceID s
 
 	return buildSoundCronSelectMenu(soundCrons, instanceID)
 }
+
+const (
+	ComponentIDSoundCronMoreInfo = "soundcron_more_info"
+	ComponentIDSoundCronEdit     = "soundcron_edit"
+	ComponentIDSoundCronDelete   = "soundcron_delete"
+)
+
+// SoundCronListActionsMenu builds the response for the soundcron list actions menu.
+// This is what is sent after the user selects a soundcron from the select menu.
+func SoundCronListActionsMenu(instanceID, name string) *discordgo.InteractionResponse {
+	response := &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: name,
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{
+					Components: []discordgo.MessageComponent{
+						discordgo.Button{
+							Label:    "More Info",
+							Style:    discordgo.PrimaryButton,
+							CustomID: ComponentIDSoundCronMoreInfo + ":" + instanceID,
+						},
+						discordgo.Button{
+							Label:    "Edit",
+							Style:    discordgo.SecondaryButton,
+							CustomID: ComponentIDSoundCronEdit + ":" + instanceID,
+						},
+						discordgo.Button{
+							Label:    "Delete",
+							Style:    discordgo.DangerButton,
+							CustomID: ComponentIDSoundCronDelete + ":" + instanceID,
+						},
+					},
+				},
+			},
+		},
+	}
+	return response
+}

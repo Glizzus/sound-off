@@ -142,8 +142,6 @@ func (fm *FlowManager) advance(
 	return nil
 }
 
-var uuidGenerator = generator.UUIDV4Generator{}
-
 func (fm *FlowManager) initializeFlow(s DiscordSession, i *discordgo.InteractionCreate) error {
 	// Find the first matching flow
 	var f *Flow

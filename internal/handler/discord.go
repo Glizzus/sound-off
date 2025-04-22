@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -232,30 +233,7 @@ func NewInteractionHandler(
 
 	flowManager := NewFlowManager(idGenerator)
 
-	flowManager.RegisterFlow(&Flow{
-		ID: "ping",
-		Root: &Node{
-			ID: "ping_slash_command",
-			Matcher: func(i *discordgo.InteractionCreate) bool {
-				if i.Type != discordgo.InteractionApplicationCommand {
-					return false
-				}
-				return i.ApplicationCommandData().Name == "ping"
-			},
-			Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
-				err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseChannelMessageWithSource,
-					Data: &discordgo.InteractionResponseData{
-						Content: "Pong!",
-					},
-				})
-				if err != nil {
-					slog.Error("Failed to respond to ping command", "error", err)
-				}
-				return nil
-			},
-		},
-	})
+	flowManager.RegisterFlow(PingFlow)
 
 	flowManager.RegisterFlow(&Flow{
 		ID: "soundcron_list",
@@ -282,25 +260,25 @@ func NewInteractionHandler(
 				if err != nil {
 					return fmt.Errorf("failed to respond to interaction: %w", err)
 				}
+
+				// Store the soundcrons in the flow context state.
+				// This is used to save a database call when the user makes a selection.
 				flowContext.State["soundcrons"] = soundCrons
-				fmt.Println("Soundcrons:", soundCrons)
+				fmt.Println("SoundCrons stored in context state")
 				return nil
 			},
 			Next: []*Node{
 				{
 					ID: "soundcron_list_select_menu",
 					Matcher: func(i *discordgo.InteractionCreate) bool {
-						fmt.Println("Interaction type:", i.Type)
-						fmt.Println("Interaction data:", i.Data)
 						if i.Type != discordgo.InteractionMessageComponent {
 							return false
 						}
-						fmt.Println("Checking if interaction is a select menu")
-						fmt.Println("CustomID:", i.MessageComponentData().CustomID)
-						return i.MessageComponentData().CustomID == presenters.ComponentIDSoundCronSelect
+						customID := i.MessageComponentData().CustomID
+						return strings.HasPrefix(customID, presenters.ComponentIDSoundCronSelect)
 					},
 					Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
-						fmt.Println("Handling soundcron list select menu")
+						fmt.Println("SoundCron selected")
 						component := i.MessageComponentData()
 						selectedID := component.Values[0]
 
@@ -309,27 +287,68 @@ func NewInteractionHandler(
 							return fmt.Errorf("failed to get soundcrons from context")
 						}
 
-						var selectedSoundCron *repository.SoundCron
-						for _, sc := range soundCrons {
-							if sc.ID == selectedID {
-								selectedSoundCron = &sc
-								break
-							}
-						}
-						if selectedSoundCron == nil {
+						// Clean the state as soon as we don't need it anymore.
+						delete(ctx.State, "soundcrons")
+
+						// Find the selected SoundCron
+						soundCron, found := util.FindFirst(soundCrons, func(sc repository.SoundCron) bool {
+							return sc.ID == selectedID
+						})
+						if !found {
 							return fmt.Errorf("failed to find soundcron with ID %s", selectedID)
 						}
 
-						err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-							Type: discordgo.InteractionResponseChannelMessageWithSource,
-							Data: &discordgo.InteractionResponseData{
-								Content: fmt.Sprintf("Selected SoundCron: %s", selectedSoundCron.Name),
-							},
-						})
+						response := presenters.SoundCronListActionsMenu(soundCron.ID, soundCron.Name)
+						err := s.InteractionRespond(i.Interaction, response)
 						if err != nil {
 							return fmt.Errorf("failed to respond to interaction: %w", err)
 						}
 						return nil
+					},
+					Next: []*Node{
+						{
+							ID: "soundcron_list_more_info",
+							Matcher: func(i *discordgo.InteractionCreate) bool {
+								if i.Type != discordgo.InteractionMessageComponent {
+									return false
+								}
+								fmt.Println("More info requested for soundcron")
+								customID := i.MessageComponentData().CustomID
+								return strings.HasPrefix(customID, presenters.ComponentIDSoundCronMoreInfo)
+							},
+							Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
+								fmt.Println("More info requested for soundcron")
+								return nil
+							},
+						},
+						{
+							ID: "soundcron_list_edit",
+							Matcher: func(i *discordgo.InteractionCreate) bool {
+								if i.Type != discordgo.InteractionMessageComponent {
+									return false
+								}
+								customID := i.MessageComponentData().CustomID
+								return strings.HasPrefix(customID, presenters.ComponentIDSoundCronEdit)
+							},
+							Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
+								fmt.Println("Edit requested for soundcron")
+								return nil
+							},
+						},
+						{
+							ID: "soundcron_list_delete",
+							Matcher: func(i *discordgo.InteractionCreate) bool {
+								if i.Type != discordgo.InteractionMessageComponent {
+									return false
+								}
+								customID := i.MessageComponentData().CustomID
+								return strings.HasPrefix(customID, presenters.ComponentIDSoundCronDelete)
+							},
+							Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
+								fmt.Println("Delete requested for soundcron")
+								return nil
+							},
+						},
 					},
 				},
 			},
@@ -337,7 +356,10 @@ func NewInteractionHandler(
 	})
 
 	return func(s DiscordSession, i *discordgo.InteractionCreate) {
-		flowManager.Router(s, i)
+		err := flowManager.Router(s, i)
+		if err != nil {
+			slog.Error("Failed to route interaction", "error", err)
+		}
 
 		HandleInteractionCreate(handlerCtx, s, i)
 	}

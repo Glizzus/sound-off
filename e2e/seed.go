@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -101,6 +102,7 @@ func UsePostgres(t *testing.T) string {
 	if startErr != nil {
 		t.Fatalf("failed to start postgres container: %v", startErr)
 	}
+	t.Logf("Postgres container being used by test %s", t.Name())
 	wg.Add(1)
 	t.Cleanup(wg.Done)
 
@@ -123,6 +125,7 @@ func GetRepository(t *testing.T, connStr string) *repository.PostgresSoundCronRe
 
 func TerminatePostgresForE2E() {
 	wg.Wait()
+	log.Printf("Terminating Postgres container")
 	if postgresContainer != nil {
 		err := postgresContainer.Terminate(context.Background())
 		if err != nil {

@@ -44,7 +44,46 @@ func (d *determinsticIDGenerator) Next() (string, error) {
 
 var _ generator.Generator[string] = (*determinsticIDGenerator)(nil)
 
-func TestSoundCronList(t *testing.T) {
+func TestSoundCronList_NoSoundCrons(t *testing.T) {
+	connStr := e2e.UsePostgres(t)
+	repo := e2e.GetRepository(t, connStr)
+
+	slashCommandInteraction := &discordgo.InteractionCreate{
+		Interaction: &discordgo.Interaction{
+			Type: discordgo.InteractionApplicationCommand,
+			Data: discordgo.ApplicationCommandInteractionData{
+				Name: "soundcron",
+				Options: []*discordgo.ApplicationCommandInteractionDataOption{
+					{
+						Name:  "list",
+						Type:  discordgo.ApplicationCommandOptionSubCommand,
+						Value: "list",
+					},
+				},
+			},
+			GuildID: "00000000000000000",
+		},
+	}
+
+	session := &mockSession{}
+
+	handler := handler.NewInteractionHandler(repo, nil, &determinsticIDGenerator{})
+	handler(session, slashCommandInteraction)
+
+	expected := &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "No soundcrons found",
+		},
+	}
+
+	diff := cmp.Diff(expected, session.Resp)
+	if diff != "" {
+		t.Errorf("session mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSoundCronList_HappyPath(t *testing.T) {
 	connStr := e2e.UsePostgres(t)
 	repo := e2e.GetRepository(t, connStr)
 	seedTestData(t, repo)
@@ -106,4 +145,6 @@ func TestSoundCronList(t *testing.T) {
 			t.Errorf("session mismatch (-want +got):\n%s", diff)
 		}
 	})
+
+	t.Run("shows actions when soundcron is selected", func(t *testing.T) {})
 }
