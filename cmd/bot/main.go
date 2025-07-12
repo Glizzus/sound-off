@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -21,7 +22,10 @@ import (
 	"github.com/glizzus/sound-off/internal/voice"
 )
 
+var dryRun = flag.Bool("dry-run", false, "Do not use Discord, just print job info to terminal")
+
 func runBotForever() error {
+	flag.Parse()
 	if err := config.LoadEnv(); err != nil {
 		if os.IsNotExist(err) {
 			slog.Warn("No .env file found, continuing without it")
@@ -109,6 +113,10 @@ func runBotForever() error {
 					job := schedule.ScheduledJob{
 						RunAt: sc.RunTime,
 						Execute: func() {
+							if *dryRun {
+								log.Printf("Dry run: would play soundcron %s in channel %s", sc.SoundCronID, channel.Name)
+								return
+							}
 							err = voice.WithVoiceChannel(session, channel.GuildID, channel.ID, func(s *discordgo.Session, vc *discordgo.VoiceConnection) error {
 								// TODO: Dynamicize the endpoint
 								url := "http://localhost:9000/soundoff/" + sc.SoundCronID
