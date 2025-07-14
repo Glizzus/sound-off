@@ -24,6 +24,8 @@ import (
 
 var dryRun = flag.Bool("dry-run", false, "Do not use Discord, just print job info to terminal")
 
+const guildID = "517907971481534467"
+
 func runBotForever() error {
 	flag.Parse()
 	if err := config.LoadEnv(); err != nil {
@@ -43,11 +45,6 @@ func runBotForever() error {
 		return fmt.Errorf("failed to migrate postgres: %w", err)
 	}
 
-	config, err := config.NewDiscordConfigFromEnv()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
 	repository := repository.NewPostgresSoundCronRepository(pool)
 
 	minioStorage, err := datalayer.NewMinioStorageFromEnv()
@@ -60,6 +57,11 @@ func runBotForever() error {
 	}
 
 	interactionHandler := handler.NewDiscordInteractionHandler(repository, minioStorage)
+
+	config, err := config.NewDiscordConfigFromEnv()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
 
 	session, err := handler.NewSession(config.Token, handler.Handlers{
 		Ready:             handler.ReadyLog,
@@ -78,8 +80,6 @@ func runBotForever() error {
 		}
 	}()
 
-	// TODO: Commit to global commands
-	const guildID = "517907971481534467"
 	if err := handler.EstablishCommands(session, guildID); err != nil {
 		return fmt.Errorf("failed to establish commands: %w", err)
 	}
