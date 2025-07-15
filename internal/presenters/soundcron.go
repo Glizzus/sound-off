@@ -46,7 +46,7 @@ func buildSoundCronSelectMenu(soundCrons []repository.SoundCron, instanceID stri
 	return &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: "Choose a soundcron:",
+			Content: "**Current Soundcrons** _(select for more details)_",
 			Components: []discordgo.MessageComponent{
 				row,
 			},
