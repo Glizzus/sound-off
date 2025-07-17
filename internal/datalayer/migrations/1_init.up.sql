@@ -4,6 +4,7 @@ CREATE TABLE soundcron (
     soundcron_name TEXT NOT NULL,
     cron TEXT NOT NULL,
     file_size BIGINT NOT NULL,
+    last_accessed TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (guild_id, soundcron_name)
 );
 

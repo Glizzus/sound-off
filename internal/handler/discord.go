@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -255,6 +257,11 @@ func NewInteractionHandler(
 					return fmt.Errorf("failed to list soundcrons: %w", err)
 				}
 
+				// Sort soundcrons by recently accessed
+				sort.Slice(soundCrons, func(i, j int) bool {
+					return soundCrons[i].LastAccessed.After(soundCrons[j].LastAccessed)
+				})
+
 				response := presenters.BuildListSoundCronsResponse(soundCrons, flowContext.InstanceID)
 				err = s.InteractionRespond(i.Interaction, response)
 				if err != nil {
@@ -277,18 +284,17 @@ func NewInteractionHandler(
 						customID := i.MessageComponentData().CustomID
 						return strings.HasPrefix(customID, presenters.ComponentIDSoundCronSelect)
 					},
-					Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
-						fmt.Println("SoundCron selected")
+					Handler: func(s DiscordSession, i *discordgo.InteractionCreate, flowContext *FlowContext) error {
 						component := i.MessageComponentData()
 						selectedID := component.Values[0]
 
-						soundCrons, ok := ctx.State["soundcrons"].([]repository.SoundCron)
+						soundCrons, ok := flowContext.State["soundcrons"].([]repository.SoundCron)
 						if !ok {
-							return fmt.Errorf("failed to get soundcrons from context")
+							return fmt.Errorf("failed to get soundcrons from context: got type %T", flowContext.State["soundcrons"])
 						}
 
 						// Clean the state as soon as we don't need it anymore.
-						delete(ctx.State, "soundcrons")
+						delete(flowContext.State, "soundcrons")
 
 						// Find the selected SoundCron
 						soundCron, found := util.FindFirst(soundCrons, func(sc repository.SoundCron) bool {
@@ -298,7 +304,22 @@ func NewInteractionHandler(
 							return fmt.Errorf("failed to find soundcron with ID %s", selectedID)
 						}
 
-						response := presenters.SoundCronListActionsMenu(soundCron.ID, soundCron.Name)
+						// Update the last accessed time
+						go func() {
+							ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+							defer cancel()
+
+							err := repo.UpdateRecentlyAccessed(ctx, soundCron.ID)
+							if err != nil {
+								slog.Error(
+									"failed to update last accessed time",
+									"error", err,
+									"soundcron_id", soundCron.ID,
+								)
+							}
+						}()
+
+						response := presenters.SoundCronListActionsMenu(flowContext.InstanceID, soundCron.Name)
 						err := s.InteractionRespond(i.Interaction, response)
 						if err != nil {
 							return fmt.Errorf("failed to respond to interaction: %w", err)
@@ -306,21 +327,6 @@ func NewInteractionHandler(
 						return nil
 					},
 					Next: []*Node{
-						{
-							ID: "soundcron_list_more_info",
-							Matcher: func(i *discordgo.InteractionCreate) bool {
-								if i.Type != discordgo.InteractionMessageComponent {
-									return false
-								}
-								fmt.Println("More info requested for soundcron")
-								customID := i.MessageComponentData().CustomID
-								return strings.HasPrefix(customID, presenters.ComponentIDSoundCronMoreInfo)
-							},
-							Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
-								fmt.Println("More info requested for soundcron")
-								return nil
-							},
-						},
 						{
 							ID: "soundcron_list_edit",
 							Matcher: func(i *discordgo.InteractionCreate) bool {
@@ -345,7 +351,8 @@ func NewInteractionHandler(
 								return strings.HasPrefix(customID, presenters.ComponentIDSoundCronDelete)
 							},
 							Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
-								fmt.Println("Delete requested for soundcron")
+								component := i.MessageComponentData()
+								fmt.Println("Delete requested for soundcron", component.CustomID)
 								return nil
 							},
 						},
@@ -471,16 +478,20 @@ func HandleInteractionCreate(
 									Flags:   discordgo.MessageFlagsEphemeral,
 								},
 							}
+						} else {
+							response = &discordgo.InteractionResponse{
+								Type: discordgo.InteractionResponseChannelMessageWithSource,
+								Data: &discordgo.InteractionResponseData{
+									Content: "SoundCron added successfully!",
+									Flags:   discordgo.MessageFlagsEphemeral,
+								},
+							}
 						}
 					}
 
-					if response == nil {
-						slog.Warn("discord response struct is nil")
-					} else {
-						err = s.InteractionRespond(i.Interaction, response)
-						if err != nil {
-							slog.Warn("failed to respond to add request", "error", err)
-						}
+					err = s.InteractionRespond(i.Interaction, response)
+					if err != nil {
+						slog.Warn("failed to respond to add request", "error", err)
 					}
 				}
 			}
@@ -514,7 +525,6 @@ func HandleInteractionCreate(
 			if err != nil {
 				slog.Warn("failed to respond to component", "error", err)
 			}
-		case presenters.ComponentIDSoundCronSelect:
 		}
 	case discordgo.InteractionModalSubmit:
 		modal := i.ModalSubmitData()

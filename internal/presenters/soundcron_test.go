@@ -40,7 +40,7 @@ func TestBuildListSoundCronsResponse(t *testing.T) {
 			want: &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: "Choose a soundcron:",
+					Content: "**Current Soundcrons** _(select for more details)_",
 					Components: []discordgo.MessageComponent{
 						discordgo.ActionsRow{
 							Components: []discordgo.MessageComponent{
@@ -97,11 +97,6 @@ func TestSoundCronListActionsMenu(t *testing.T) {
 					Components: []discordgo.MessageComponent{
 						discordgo.ActionsRow{
 							Components: []discordgo.MessageComponent{
-								discordgo.Button{
-									Label:    "More Info",
-									Style:    discordgo.PrimaryButton,
-									CustomID: "soundcron_more_info:test-sc-1",
-								},
 								discordgo.Button{
 									Label:    "Edit",
 									Style:    discordgo.SecondaryButton,

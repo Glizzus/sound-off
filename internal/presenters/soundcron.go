@@ -63,7 +63,6 @@ func BuildListSoundCronsResponse(soundCrons []repository.SoundCron, instanceID s
 }
 
 const (
-	ComponentIDSoundCronMoreInfo = "soundcron_more_info"
 	ComponentIDSoundCronEdit     = "soundcron_edit"
 	ComponentIDSoundCronDelete   = "soundcron_delete"
 )
@@ -78,11 +77,6 @@ func SoundCronListActionsMenu(instanceID, name string) *discordgo.InteractionRes
 			Components: []discordgo.MessageComponent{
 				discordgo.ActionsRow{
 					Components: []discordgo.MessageComponent{
-						discordgo.Button{
-							Label:    "More Info",
-							Style:    discordgo.PrimaryButton,
-							CustomID: ComponentIDSoundCronMoreInfo + ":" + instanceID,
-						},
 						discordgo.Button{
 							Label:    "Edit",
 							Style:    discordgo.SecondaryButton,

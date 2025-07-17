@@ -9,6 +9,9 @@ import (
 	"github.com/glizzus/sound-off/internal/generator"
 )
 
+// InstanceIDFromInteraction extracts the instance ID from a Discord interaction.
+// Each Discord interaction type provides a different way to access the custom ID,
+// which is metadata used to keep track of interaction state.
 func InstanceIDFromInteraction(i *discordgo.InteractionCreate) string {
 	var customID string
 
@@ -24,6 +27,10 @@ func InstanceIDFromInteraction(i *discordgo.InteractionCreate) string {
 	return InstanceIDFromCustomID(customID)
 }
 
+// InstanceIDFromCustomID extracts the instance ID from a custom ID string.
+// A custom ID contains many different parts, but the instance ID is always the second part.
+// The general format is:
+// <flow_id>:<instance_id>:<payload>
 func InstanceIDFromCustomID(customID string) string {
 	parts := strings.SplitN(customID, ":", 2)
 	if len(parts) != 2 {

@@ -17,6 +17,10 @@ type SoundCron struct {
 	GuildID  string
 	Cron     string
 	FileSize int64
+
+	// LastAccessed is the last time a user interacted with this soundcron.
+	// This is used to order soundcrons by recency.
+	LastAccessed time.Time
 }
 
 type SoundCronJob struct {
@@ -118,7 +122,7 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 
 func (r *PostgresSoundCronRepository) List(ctx context.Context, guildID string) ([]SoundCron, error) {
 	const query = `
-	SELECT id, soundcron_name, guild_id, cron, file_size
+	SELECT id, soundcron_name, guild_id, cron, file_size, last_accessed
 	FROM soundcron
 	WHERE guild_id = $1
 	`
@@ -131,7 +135,15 @@ func (r *PostgresSoundCronRepository) List(ctx context.Context, guildID string) 
 	var soundCrons []SoundCron
 	for rows.Next() {
 		var sc SoundCron
-		if err := rows.Scan(&sc.ID, &sc.Name, &sc.GuildID, &sc.Cron, &sc.FileSize); err != nil {
+		err = rows.Scan(
+			&sc.ID,
+			&sc.Name,
+			&sc.GuildID,
+			&sc.Cron,
+			&sc.FileSize,
+			&sc.LastAccessed,
+		)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan sound cron: %w", err)
 		}
 		soundCrons = append(soundCrons, sc)
@@ -213,6 +225,33 @@ func (r *PostgresSoundCronRepository) Refresh(ctx context.Context, soundCronID s
 	err = doRefresh(ctx, r.db, soundCronID, cron)
 	if err != nil {
 		return fmt.Errorf("failed to refresh sound cron: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresSoundCronRepository) UpdateRecentlyAccessed(ctx context.Context, soundCronID string) error {
+	const query = `
+	UPDATE soundcron
+	SET last_accessed = NOW()
+	WHERE id = $1
+	`
+
+	_, err := r.db.Exec(ctx, query, soundCronID)
+	if err != nil {
+		return fmt.Errorf("failed to update last accessed time: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresSoundCronRepository) DeleteByID(ctx context.Context, soundCronID string) error {
+	const query = `
+	DELETE FROM soundcron
+	WHERE id = $1
+	`
+
+	_, err := r.db.Exec(ctx, query, soundCronID)
+	if err != nil {
+		return fmt.Errorf("failed to delete sound cron: %w", err)
 	}
 	return nil
 }

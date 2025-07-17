@@ -114,7 +114,7 @@ func TestSoundCronList_HappyPath(t *testing.T) {
 		expected := &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Content: "Choose a soundcron:",
+				Content: "**Current Soundcrons** _(select for more details)_",
 				Components: []discordgo.MessageComponent{
 					discordgo.ActionsRow{
 						Components: []discordgo.MessageComponent{
@@ -123,14 +123,16 @@ func TestSoundCronList_HappyPath(t *testing.T) {
 								Placeholder: "Select a soundcron",
 								MinValues:   &[]int{1}[0],
 								MaxValues:   1,
+								// These options should be in reverse order
+								// of insertion since they are ordered by the last accessed time
 								Options: []discordgo.SelectMenuOption{
-									{
-										Label: "Everything She Wants (Wham!)",
-										Value: "302808d9-141e-410d-a69d-2418ad15b5de",
-									},
 									{
 										Label: "Take On Me (A-ha)",
 										Value: "8597e24a-f204-4c88-bad0-fe0ab9a73ff1",
+									},
+									{
+										Label: "Everything She Wants (Wham!)",
+										Value: "302808d9-141e-410d-a69d-2418ad15b5de",
 									},
 								},
 							},
