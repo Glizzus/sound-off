@@ -32,11 +32,10 @@ func InstanceIDFromInteraction(i *discordgo.InteractionCreate) string {
 // The general format is:
 // <flow_id>:<instance_id>:<payload>
 func InstanceIDFromCustomID(customID string) string {
-	parts := strings.SplitN(customID, ":", 2)
-	if len(parts) != 2 {
+	parts := strings.Split(customID, ":")
+	if len(parts) < 2 {
 		return ""
 	}
-
 	return parts[1]
 }
 

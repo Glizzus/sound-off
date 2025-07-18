@@ -1,6 +1,7 @@
 package repository_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -10,7 +11,10 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-func TestRepositorySave(t *testing.T) {
+// getRepositoryAgainstPostgres sets up a PostgreSQL container for testing
+// and returns a SoundCronRepository instance along with the connection pool.
+func getRepositoryAgainstPostgres(t *testing.T) (repository.SoundCronRepository, *pgxpool.Pool) {
+	t.Helper()
 	ctx := t.Context()
 	postgresContainer, err := postgres.Run(
 		ctx,
@@ -23,29 +27,32 @@ func TestRepositorySave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start postgres container: %v", err)
 	}
-	defer func() {
-		if err := postgresContainer.Terminate(ctx); err != nil {
+	t.Cleanup(func() {
+		if err := postgresContainer.Terminate(context.Background()); err != nil {
 			t.Fatalf("failed to terminate postgres container: %v", err)
 		}
-	}()
+	})
 
 	connStr, err := postgresContainer.ConnectionString(ctx)
 	if err != nil {
 		t.Fatalf("failed to get connection string: %v", err)
 	}
 
-	pool, err := pgxpool.New(ctx, connStr) // Use connStr instead of calling ConnectionString() again
+	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		t.Fatalf("failed to create postgres pool: %v", err)
 	}
-
-	defer pool.Close()
 
 	if err := datalayer.MigratePostgres(pool); err != nil {
 		t.Fatalf("failed to migrate postgres: %v", err)
 	}
 
-	repo := repository.NewPostgresSoundCronRepository(pool)
+	return repository.NewPostgresSoundCronRepository(pool), pool
+}
+
+func TestRepositorySave(t *testing.T) {
+	repo, pool := getRepositoryAgainstPostgres(t)
+	ctx := t.Context()
 
 	id := "e281f5c0-c05f-423d-9add-c0ffee084f27"
 	if err := repo.Save(ctx, repository.SoundCron{

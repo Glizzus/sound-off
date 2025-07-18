@@ -267,11 +267,12 @@ func NewInteractionHandler(
 				if err != nil {
 					return fmt.Errorf("failed to respond to interaction: %w", err)
 				}
+				if len(soundCrons) > 0 {
+					// Store the soundcrons in the flow context state.
+					// This is used to save a database call when the user makes a selection.
+					flowContext.State["soundcrons"] = soundCrons
+				}
 
-				// Store the soundcrons in the flow context state.
-				// This is used to save a database call when the user makes a selection.
-				flowContext.State["soundcrons"] = soundCrons
-				fmt.Println("SoundCrons stored in context state")
 				return nil
 			},
 			Next: []*Node{
@@ -286,7 +287,17 @@ func NewInteractionHandler(
 					},
 					Handler: func(s DiscordSession, i *discordgo.InteractionCreate, flowContext *FlowContext) error {
 						component := i.MessageComponentData()
-						selectedID := component.Values[0]
+						selectedID := ""
+						switch component.ComponentType {
+						case discordgo.SelectMenuComponent:
+							selectedID = component.Values[0]
+						case discordgo.ButtonComponent:
+							parts := strings.Split(component.CustomID, ":")
+							if len(parts) < 3 {
+								return fmt.Errorf("invalid custom ID format: %s", component.CustomID)
+							}
+							selectedID = parts[2]
+						}
 
 						soundCrons, ok := flowContext.State["soundcrons"].([]repository.SoundCron)
 						if !ok {
@@ -318,6 +329,8 @@ func NewInteractionHandler(
 								)
 							}
 						}()
+
+						flowContext.State["soundcron"] = soundCron
 
 						response := presenters.SoundCronListActionsMenu(flowContext.InstanceID, soundCron.Name)
 						err := s.InteractionRespond(i.Interaction, response)
@@ -351,8 +364,28 @@ func NewInteractionHandler(
 								return strings.HasPrefix(customID, presenters.ComponentIDSoundCronDelete)
 							},
 							Handler: func(s DiscordSession, i *discordgo.InteractionCreate, ctx *FlowContext) error {
-								component := i.MessageComponentData()
-								fmt.Println("Delete requested for soundcron", component.CustomID)
+								soundcron, ok := ctx.State["soundcron"].(repository.SoundCron)
+								if !ok {
+									return fmt.Errorf("failed to get soundcron from context: got type %T", ctx.State["soundcron"])
+								}
+
+								delete(ctx.State, "soundcron")
+
+								err := repo.DeleteByID(context.Background(), soundcron.ID)
+								if err != nil {
+									return fmt.Errorf("failed to delete soundcron: %w", err)
+								}
+								response := &discordgo.InteractionResponse{
+									Type: discordgo.InteractionResponseChannelMessageWithSource,
+									Data: &discordgo.InteractionResponseData{
+										Content: fmt.Sprintf("Soundcron `%s` deleted successfully!", soundcron.Name),
+										Flags:   discordgo.MessageFlagsEphemeral,
+									},
+								}
+								err = s.InteractionRespond(i.Interaction, response)
+								if err != nil {
+									return fmt.Errorf("failed to respond to interaction: %w", err)
+								}
 								return nil
 							},
 						},

@@ -40,23 +40,111 @@ func TestBuildListSoundCronsResponse(t *testing.T) {
 			want: &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: "**Current Soundcrons** _(select for more details)_",
+					Content: "Current SoundCrons",
 					Components: []discordgo.MessageComponent{
 						discordgo.ActionsRow{
 							Components: []discordgo.MessageComponent{
+								discordgo.Button{
+									Label:    "Test SoundCron 1",
+									Style:    discordgo.SecondaryButton,
+									CustomID: "soundcron_select_menu:random-instance-id:test-sc-1",
+								},
+							},
+						},
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								discordgo.Button{
+									Label:    "Test SoundCron 2",
+									Style:    discordgo.SecondaryButton,
+									CustomID: "soundcron_select_menu:random-instance-id:test-sc-2",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "more than four soundcrons",
+			input: []repository.SoundCron{
+				{
+					ID:   "test-sc-1",
+					Name: "Test SoundCron 1",
+					Cron: "0 0 * * *",
+				},
+				{
+					ID:   "test-sc-2",
+					Name: "Test SoundCron 2",
+					Cron: "0 1 * * *",
+				},
+				{
+					ID:   "test-sc-3",
+					Name: "Test SoundCron 3",
+					Cron: "0 2 * * *",
+				},
+				{
+					ID:   "test-sc-4",
+					Name: "Test SoundCron 4",
+					Cron: "0 3 * * *",
+				},
+				{
+					ID:   "test-sc-5",
+					Name: "Test SoundCron 5",
+					Cron: "0 4 * * *",
+				},
+			},
+			want: &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Current SoundCrons",
+					Components: []discordgo.MessageComponent{
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								discordgo.Button{
+									Label:    "Test SoundCron 1",
+									Style:    discordgo.SecondaryButton,
+									CustomID: "soundcron_select_menu:random-instance-id:test-sc-1",
+								},
+							},
+						},
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								discordgo.Button{
+									Label:    "Test SoundCron 2",
+									Style:    discordgo.SecondaryButton,
+									CustomID: "soundcron_select_menu:random-instance-id:test-sc-2",
+								},
+							},
+						},
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								discordgo.Button{
+									Label:    "Test SoundCron 3",
+									Style:    discordgo.SecondaryButton,
+									CustomID: "soundcron_select_menu:random-instance-id:test-sc-3",
+								},
+							},
+						},
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
+								discordgo.Button{
+									Label:    "Test SoundCron 4",
+									Style:    discordgo.SecondaryButton,
+									CustomID: "soundcron_select_menu:random-instance-id:test-sc-4",
+								},
+							},
+						},
+						discordgo.ActionsRow{
+							Components: []discordgo.MessageComponent{
 								discordgo.SelectMenu{
-									CustomID:    "soundcron_select_menu:test-sc-1",
-									Placeholder: "Select a soundcron",
+									CustomID:    "soundcron_select_menu:random-instance-id",
+									Placeholder: "More soundcrons...",
 									MinValues:   &[]int{1}[0],
 									MaxValues:   1,
 									Options: []discordgo.SelectMenuOption{
 										{
-											Label: "Test SoundCron 1",
-											Value: "test-sc-1",
-										},
-										{
-											Label: "Test SoundCron 2",
-											Value: "test-sc-2",
+											Label: "Test SoundCron 5",
+											Value: "test-sc-5",
 										},
 									},
 								},
@@ -69,7 +157,7 @@ func TestBuildListSoundCronsResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := presenters.BuildListSoundCronsResponse(tt.input, "test-sc-1")
+			got := presenters.BuildListSoundCronsResponse(tt.input, "random-instance-id")
 			diff := cmp.Diff(got, tt.want)
 			if diff != "" {
 				t.Errorf("BuildListSoundCronsResponse() mismatch (-want +got):\n%s", diff)

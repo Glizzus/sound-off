@@ -12,6 +12,26 @@ var noSoundCronFoundResponse = &discordgo.InteractionResponse{
 	},
 }
 
+func splitSoundCronsForList(soundCrons []repository.SoundCron) (buttons []repository.SoundCron, menu []repository.SoundCron) {
+	if len(soundCrons) <= 4 {
+		return soundCrons, nil
+	}
+
+	buttons = soundCrons[:4]
+	menu = soundCrons[4:]
+
+	return buttons, menu
+}
+
+func soundCronToButton(sc repository.SoundCron, instanceID string) discordgo.Button {
+	label := sc.Name
+	return discordgo.Button{
+		Label:    label,
+		Style:    discordgo.SecondaryButton,
+		CustomID: ComponentIDSoundCronSelect + ":" + instanceID + ":" + sc.ID,
+	}
+}
+
 func soundCronToSelectMenuOption(sc repository.SoundCron) discordgo.SelectMenuOption {
 	return discordgo.SelectMenuOption{
 		Label: sc.Name,
@@ -24,36 +44,48 @@ var soundCronSelectMinValues = 1
 const ComponentIDSoundCronSelect = "soundcron_select_menu"
 
 func buildSoundCronSelectMenu(soundCrons []repository.SoundCron, instanceID string) *discordgo.InteractionResponse {
-	var options []discordgo.SelectMenuOption
-	for _, sc := range soundCrons {
-		options = append(options, soundCronToSelectMenuOption(sc))
+	firstFour, rest := splitSoundCronsForList(soundCrons)
+
+	rows := make([]discordgo.MessageComponent, 0, len(firstFour)+1)
+
+	for _, sc := range firstFour {
+		button := soundCronToButton(sc, instanceID)
+		rows = append(rows, discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{button},
+		})
 	}
 
-	menu := discordgo.SelectMenu{
-		CustomID:    ComponentIDSoundCronSelect + ":" + instanceID,
-		Placeholder: "Select a soundcron",
-		MinValues:   &soundCronSelectMinValues,
-		MaxValues:   1,
-		Options:     options,
-	}
+	if len(rest) > 0 {
+		selectOptions := make([]discordgo.SelectMenuOption, 0, len(rest))
+		for _, sc := range rest {
+			selectOptions = append(selectOptions, soundCronToSelectMenuOption(sc))
+		}
 
-	row := discordgo.ActionsRow{
-		Components: []discordgo.MessageComponent{
-			menu,
-		},
+		menu := discordgo.SelectMenu{
+			CustomID:    ComponentIDSoundCronSelect + ":" + instanceID,
+			Placeholder: "More soundcrons...",
+			MinValues:   &soundCronSelectMinValues,
+			MaxValues:   1,
+			Options:     selectOptions,
+		}
+
+		rows = append(rows, discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{menu},
+		})
 	}
 
 	return &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: "**Current Soundcrons** _(select for more details)_",
-			Components: []discordgo.MessageComponent{
-				row,
-			},
+			Content:    "Current SoundCrons",
+			Components: rows,
 		},
 	}
 }
 
+// BuildListSoundCronsResponse builds the response for listing soundcrons.
+// This response is structured to where the first 4 rows are a button representing the
+// first 4 soundcrons, and the rest are in a select menu.
 func BuildListSoundCronsResponse(soundCrons []repository.SoundCron, instanceID string) *discordgo.InteractionResponse {
 	if len(soundCrons) == 0 {
 		return noSoundCronFoundResponse
