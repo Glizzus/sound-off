@@ -67,7 +67,7 @@ func TestSoundCronList_NoSoundCrons(t *testing.T) {
 
 	session := &mockSession{}
 
-	handler := handler.NewInteractionHandler(repo, nil, &determinsticIDGenerator{})
+	handler := handler.NewInteractionHandler(repo, nil, &determinsticIDGenerator{}, nil)
 	handler(session, slashCommandInteraction)
 
 	expected := &discordgo.InteractionResponse{
@@ -131,7 +131,7 @@ var soundCronListButtonInteraction = &discordgo.InteractionCreate{
 	Interaction: &discordgo.Interaction{
 		Type: discordgo.InteractionMessageComponent,
 		Data: discordgo.MessageComponentInteractionData{
-			CustomID: "soundcron_select_menu:determinism:8597e24a-f204-4c88-bad0-fe0ab9a73ff1",
+			CustomID:      "soundcron_select_menu:determinism:8597e24a-f204-4c88-bad0-fe0ab9a73ff1",
 			ComponentType: discordgo.ButtonComponent,
 		},
 		GuildID: "74241007174813750",
@@ -146,13 +146,13 @@ var expectedSoundCronListButtonResponse = &discordgo.InteractionResponse{
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
-						Label: "Edit",
-						Style: discordgo.SecondaryButton,
+						Label:    "Edit",
+						Style:    discordgo.SecondaryButton,
 						CustomID: "soundcron_edit:determinism",
 					},
 					discordgo.Button{
-						Label: "Delete",
-						Style: discordgo.DangerButton,
+						Label:    "Delete",
+						Style:    discordgo.DangerButton,
 						CustomID: "soundcron_delete:determinism",
 					},
 				},
@@ -160,14 +160,13 @@ var expectedSoundCronListButtonResponse = &discordgo.InteractionResponse{
 		},
 	},
 }
-					  
 
 func TestSoundCronList(t *testing.T) {
 	connStr := e2e.UsePostgres(t)
 	repo := e2e.GetRepository(t, connStr)
 	seedTestData(t, repo)
 
-	handler := handler.NewInteractionHandler(repo, nil, &determinsticIDGenerator{})
+	handler := handler.NewInteractionHandler(repo, nil, &determinsticIDGenerator{}, nil)
 	session := &mockSession{}
 
 	handler(session, soundCronListSlashCommandInteraction)

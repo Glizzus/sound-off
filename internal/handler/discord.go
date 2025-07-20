@@ -20,6 +20,7 @@ import (
 	"github.com/glizzus/sound-off/internal/repository"
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/util"
+	"github.com/glizzus/sound-off/internal/worker"
 )
 
 const (
@@ -202,9 +203,15 @@ type HandlerContext struct {
 func NewDiscordInteractionHandler(
 	repo *repository.PostgresSoundCronRepository,
 	blobStorage datalayer.BlobStorage,
+	blacklistAdder worker.BlacklistAdder,
 ) func(*discordgo.Session, *discordgo.InteractionCreate) {
 	uuidGenerator := &generator.UUIDV4Generator{}
-	internalHandler := NewInteractionHandler(repo, blobStorage, uuidGenerator)
+	internalHandler := NewInteractionHandler(
+		repo,
+		blobStorage,
+		uuidGenerator,
+		blacklistAdder,
+	)
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		internalHandler(s, i)
 	}
@@ -214,6 +221,7 @@ func NewInteractionHandler(
 	repo *repository.PostgresSoundCronRepository,
 	blobStorage datalayer.BlobStorage,
 	idGenerator generator.Generator[string],
+	blacklistAdder worker.BlacklistAdder,
 ) func(DiscordSession, *discordgo.InteractionCreate) {
 	audioPiper := &AudioPiper{
 		blobStorage: blobStorage,
@@ -375,6 +383,12 @@ func NewInteractionHandler(
 								if err != nil {
 									return fmt.Errorf("failed to delete soundcron: %w", err)
 								}
+
+								err = blacklistAdder.AddToBlacklist(context.Background(), soundcron.ID)
+								if err != nil {
+									return fmt.Errorf("failed to add soundcron to blacklist: %w", err)
+								}
+
 								response := &discordgo.InteractionResponse{
 									Type: discordgo.InteractionResponseChannelMessageWithSource,
 									Data: &discordgo.InteractionResponseData{
@@ -688,7 +702,12 @@ func NewSession(token string, handlers Handlers) (*discordgo.Session, error) {
 	}
 
 	s.AddHandler(handlers.Ready)
-	s.AddHandler(handlers.InteractionCreate)
+	if handlers.InteractionCreate != nil {
+		// Register the interaction create handler
+		s.AddHandler(handlers.InteractionCreate)
+	} else {
+		slog.Info("no InteractionCreate handler provided, skipping registration")
+	}
 
 	s.Identify.Intents = intents
 	return s, nil

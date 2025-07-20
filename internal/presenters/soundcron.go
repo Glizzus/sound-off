@@ -95,8 +95,8 @@ func BuildListSoundCronsResponse(soundCrons []repository.SoundCron, instanceID s
 }
 
 const (
-	ComponentIDSoundCronEdit     = "soundcron_edit"
-	ComponentIDSoundCronDelete   = "soundcron_delete"
+	ComponentIDSoundCronEdit   = "soundcron_edit"
+	ComponentIDSoundCronDelete = "soundcron_delete"
 )
 
 // SoundCronListActionsMenu builds the response for the soundcron list actions menu.

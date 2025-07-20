@@ -39,7 +39,7 @@ func TestInteractionCreatePing(t *testing.T) {
 		},
 	}
 
-	handler := handler.NewInteractionHandler(nil, nil, &generator.UUIDV4Generator{})
+	handler := handler.NewInteractionHandler(nil, nil, &generator.UUIDV4Generator{}, nil)
 	handler(session, interaction)
 
 	expectedSession := &mockSession{

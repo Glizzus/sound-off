@@ -4,22 +4,19 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
 	"github.com/glizzus/sound-off/internal/config"
 	"github.com/glizzus/sound-off/internal/datalayer"
-	"github.com/glizzus/sound-off/internal/dca"
 	"github.com/glizzus/sound-off/internal/handler"
 	"github.com/glizzus/sound-off/internal/repository"
-	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/voice"
+	"github.com/glizzus/sound-off/internal/worker"
+	"github.com/redis/go-redis/v9"
 )
 
 var dryRun = flag.Bool("dry-run", false, "Do not use Discord, just print job info to terminal")
@@ -56,14 +53,35 @@ func runBotForever() error {
 		return fmt.Errorf("failed to ensure minio bucket: %w", err)
 	}
 
-	interactionHandler := handler.NewDiscordInteractionHandler(repository, minioStorage)
+	var blacklistAdder worker.BlacklistAdder
+	var jobHandler worker.JobHandler
+	if *dryRun {
+		jobHandler = &worker.PrintingJobHandler{}
+		blacklistAdder = &worker.MemoryBlacklistAdder{}
+	} else {
+		redisConfig, err := config.NewRedisConfigFromEnv()
+		if err != nil {
+			return fmt.Errorf("failed to load Redis config: %w", err)
+		}
+		redisClient := redis.NewClient(&redis.Options{
+			Addr: redisConfig.Addr,
+		})
 
-	config, err := config.NewDiscordConfigFromEnv()
+		jobHandler, err = worker.NewRedisJobHandler(redisClient)
+		if err != nil {
+			return fmt.Errorf("failed to create Redis job handler: %w", err)
+		}
+		blacklistAdder = worker.NewRedisBlacklistAdder(redisClient)
+	}
+
+	interactionHandler := handler.NewDiscordInteractionHandler(repository, minioStorage, blacklistAdder)
+
+	discordConfig, err := config.NewDiscordConfigFromEnv()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	session, err := handler.NewSession(config.Token, handler.Handlers{
+	session, err := handler.NewSession(discordConfig.Token, handler.Handlers{
 		Ready:             handler.ReadyLog,
 		InteractionCreate: interactionHandler,
 	})
@@ -84,8 +102,6 @@ func runBotForever() error {
 		return fmt.Errorf("failed to establish commands: %w", err)
 	}
 
-	dcaSteamer := voice.NewFFmpegDCAStreamer(&voice.HTTPURLReader{Client: http.DefaultClient})
-
 	ticker := time.NewTicker(27 * time.Second)
 	go func() {
 		for {
@@ -96,69 +112,32 @@ func runBotForever() error {
 					slog.Error("failed to pull soundcrons", "error", err)
 					continue
 				}
-				for _, sc := range upcoming {
-					slog.Info("pulled soundcron", "soundcron_id", sc.SoundCronID, "run_time", sc.RunTime)
-					channels, err := session.GuildChannels(guildID)
+
+				var streamJobs []worker.SoundCronStreamJob
+				for _, job := range upcoming {
+					channels, err := session.GuildChannels(job.GuildID)
 					if err != nil {
-						slog.Error("failed to get guild channels", "error", err)
+						slog.Error("failed to get guild channels", "guildID", job.GuildID, "error", err)
 						continue
 					}
-
-					channel := voice.MaxAttendedChannel(channels)
-					if channel == nil {
-						slog.Warn("no channel found")
+					maxAttendedChannel := voice.MaxAttendedChannel(channels)
+					if maxAttendedChannel == nil {
+						slog.Debug("no attended channels found for guild", "guildID", job.GuildID)
 						continue
 					}
+					streamJobs = append(streamJobs, worker.SoundCronStreamJob{
+						SoundCronID:     job.SoundCronID,
+						Name:            job.Name,
+						GuildID:         job.GuildID,
+						RunTime:         job.RunTime,
+						TargetChannelID: maxAttendedChannel.ID,
+					})
+				}
 
-					job := schedule.ScheduledJob{
-						RunAt: sc.RunTime,
-						Execute: func() {
-							if *dryRun {
-								log.Printf("Dry run: would play soundcron %s in channel %s", sc.SoundCronID, channel.Name)
-								return
-							}
-							err = voice.WithVoiceChannel(session, channel.GuildID, channel.ID, func(s *discordgo.Session, vc *discordgo.VoiceConnection) error {
-								// TODO: Dynamicize the endpoint
-								url := "http://localhost:9000/soundoff/" + sc.SoundCronID
-								audioSession, err := dcaSteamer.StreamDCAOnTheFly(context.Background(), url)
-								if err != nil {
-									return fmt.Errorf("unable to stream dca on the fly: %w", err)
-								}
-								defer audioSession.Cleanup()
-
-								done := make(chan error)
-								stream := dca.NewStream(audioSession, vc, done)
-								err = <-done
-								if err != nil {
-									if err == io.EOF {
-										log.Printf("Stream finished")
-									} else {
-										log.Printf("Stream error: %v", err)
-									}
-								}
-								_, err = stream.Finished()
-								if err != nil {
-									log.Printf("Stream finished with error: %v", err)
-								}
-
-								err = audioSession.Error()
-								if err != nil {
-									log.Printf("Audio session error: %v", err)
-								}
-
-								return nil
-							})
-							if err != nil {
-								slog.Error("failed to play sound", "error", err)
-							}
-							err = repository.Refresh(context.Background(), sc.SoundCronID)
-							if err != nil {
-								slog.Error("failed to refresh sound cron", "error", err)
-							}
-						},
-					}
-					job.Schedule()
-					log.Printf("scheduled the job")
+				go jobHandler.HandleJobs(context.Background(), streamJobs...)
+				// Look into batching here (or a more sophisticated solution)
+				for _, job := range upcoming {
+					repository.Refresh(context.Background(), job.SoundCronID)
 				}
 			case <-time.After(5 * time.Minute):
 			}

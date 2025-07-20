@@ -13,6 +13,7 @@ import (
 	"github.com/glizzus/sound-off/internal/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
 var seedOnce sync.Once
@@ -57,12 +58,12 @@ func SeedGlobalNoise(t *testing.T, repo *repository.PostgresSoundCronRepository)
 }
 
 var (
-	once              sync.Once
+	postgresOnce      sync.Once
 	postgresContainer *postgres.PostgresContainer
-	connStr           string
-	startErr          error
+	postgresConnStr   string
+	postgresStartErr  error
 	pool              *pgxpool.Pool
-	wg                sync.WaitGroup
+	postgresWG        sync.WaitGroup
 )
 
 // UsePostgres signals that the test is using Postgres as its database.
@@ -72,41 +73,41 @@ var (
 func UsePostgres(t *testing.T) string {
 	t.Helper()
 
-	once.Do(func() {
+	postgresOnce.Do(func() {
 		ctx := context.Background()
-		postgresContainer, startErr = postgres.Run(
+		postgresContainer, postgresStartErr = postgres.Run(
 			ctx,
-			"postgres",
+			"postgres@sha256:3962158596daaef3682838cc8eb0e719ad1ce520f88e34596ce8d5de1b6330a1",
 			postgres.WithDatabase("soundoff"),
 			postgres.WithUsername("user"),
 			postgres.WithPassword("password"),
 			postgres.BasicWaitStrategies(),
 		)
-		if startErr != nil {
+		if postgresStartErr != nil {
 			return
 		}
-		connStr, startErr = postgresContainer.ConnectionString(ctx)
-		if startErr != nil {
+		postgresConnStr, postgresStartErr = postgresContainer.ConnectionString(ctx)
+		if postgresStartErr != nil {
 			return
 		}
 
-		pool, startErr = pgxpool.New(ctx, connStr)
-		if startErr != nil {
+		pool, postgresStartErr = pgxpool.New(ctx, postgresConnStr)
+		if postgresStartErr != nil {
 			return
 		}
 		defer pool.Close()
 
-		startErr = datalayer.MigratePostgres(pool)
+		postgresStartErr = datalayer.MigratePostgres(pool)
 	})
 
-	if startErr != nil {
-		t.Fatalf("failed to start postgres container: %v", startErr)
+	if postgresStartErr != nil {
+		t.Fatalf("failed to start postgres container: %v", postgresStartErr)
 	}
 	t.Logf("Postgres container being used by test %s", t.Name())
-	wg.Add(1)
-	t.Cleanup(wg.Done)
+	postgresWG.Add(1)
+	t.Cleanup(postgresWG.Done)
 
-	return connStr
+	return postgresConnStr
 }
 
 // GetRepository creates a new PostgresSoundCronRepository for testing.
@@ -124,12 +125,61 @@ func GetRepository(t *testing.T, connStr string) *repository.PostgresSoundCronRe
 }
 
 func TerminatePostgresForE2E() {
-	wg.Wait()
+	postgresWG.Wait()
 	log.Printf("Terminating Postgres container")
 	if postgresContainer != nil {
 		err := postgresContainer.Terminate(context.Background())
 		if err != nil {
 			fmt.Printf("failed to terminate postgres container: %v", err)
+		}
+	}
+}
+
+var (
+	redisOnce      sync.Once
+	redisContainer *redis.RedisContainer
+	redisConnStr   string
+	redisStartErr  error
+
+	redisWG sync.WaitGroup
+)
+
+// UseRedis signals that the test will use Redis.
+// It starts or reuses a Redis container for the test.
+// This function reuses the Redis container across tests to simulate real-world usage.
+// It returns the Redis connection string for the test to use.
+func UseRedis(t *testing.T) string {
+	t.Helper()
+	redisOnce.Do(func() {
+		ctx := context.Background()
+		redisContainer, redisStartErr = redis.Run(
+			ctx,
+			"redis",
+		)
+		if redisStartErr != nil {
+			return
+		}
+		redisConnStr, redisStartErr = redisContainer.ConnectionString(ctx)
+		if redisStartErr != nil {
+			return
+		}
+	})
+	if redisStartErr != nil {
+		t.Fatalf("failed to start redis container: %v", redisStartErr)
+	}
+	t.Logf("Redis container being used by test %s", t.Name())
+	redisWG.Add(1)
+	t.Cleanup(redisWG.Done)
+	return redisConnStr
+}
+
+func TerminateRedisForE2E() {
+	redisWG.Wait()
+	log.Printf("Terminating Redis container")
+	if redisContainer != nil {
+		err := redisContainer.Terminate(context.Background())
+		if err != nil {
+			fmt.Printf("failed to terminate redis container: %v", err)
 		}
 	}
 }

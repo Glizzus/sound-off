@@ -9,7 +9,7 @@ import (
 
 type DiscordConfig struct {
 	Token          string `env:"DISCORD_TOKEN, required"`
-	GuildID       string `env:"DISCORD_GUILD_ID"`
+	GuildID        string `env:"DISCORD_GUILD_ID"`
 	RunBotGlobally bool   `env:"DISCORD_RUN_BOT_GLOBALLY"`
 	ClientID       string `env:"DISCORD_CLIENT_ID, required"`
 }

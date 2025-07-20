@@ -4,6 +4,8 @@ services:
     entrypoint: ["sleep", "infinity"]
     volumes:
       - ../:/workspaces
+    environment:
+      - TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal
 
   postgres:
     image: postgres
@@ -27,7 +29,15 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
+  
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
 
 volumes:
   postgres-data:
   minio-data:
+  redis-data:
