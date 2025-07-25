@@ -16,6 +16,7 @@ type PutOptions struct {
 
 type BlobStorage interface {
 	Put(ctx context.Context, key string, data io.Reader, opts PutOptions) error
+	Get(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
 type MinioStorage struct {
@@ -81,4 +82,12 @@ func (s *MinioStorage) Put(ctx context.Context, key string, data io.Reader, opts
 		ContentType: opts.ContentType,
 	})
 	return err
+}
+
+func (s *MinioStorage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
 }

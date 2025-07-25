@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -19,7 +20,20 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+func getLogAttrs(job worker.SoundCronStreamJob) []any {
+	return []any{
+		"soundCronID", job.SoundCronID,
+		"jobName", job.Name,
+		"guildID", job.GuildID,
+		"runAt", job.RunTime.Format("2006-01-02 15:04:05"),
+		"targetChannelID", job.TargetChannelID,
+	}
+}
+
+var dryRun = flag.Bool("dry-run", false, "Do not use Discord, just print job info to terminal")
+
 func runWorkerForever() error {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 	if err := config.LoadEnv(); err != nil {
 		if os.IsNotExist(err) {
 			slog.Warn("No .env file found, continuing without it")
@@ -65,97 +79,110 @@ func runWorkerForever() error {
 		}
 	}()
 
-	dcaStreamer := voice.NewFFmpegDCAStreamer(&voice.HTTPURLReader{Client: http.DefaultClient})
+	blacklistChecker := worker.NewRedisBlacklistHandler(rdb)
+	jobReceiver := worker.NewRedisJobReceiver(rdb, consumer)
 
 	for {
-		entries, err := rdb.XReadGroup(context.Background(), &redis.XReadGroupArgs{
-			Group:    "soundcron_streaming_group",
-			Consumer: consumer,
-			Streams:  []string{"soundcron_jobs", ">"},
-			Block:    0, // Block forever until a new job arrives
-		}).Result()
+		jobs, err := jobReceiver.ReceiveJobs(context.Background())
 		if err != nil {
-			slog.Error("failed to read from redis stream", slog.Any("error", err))
-			time.Sleep(2 * time.Second) // Prevent tight error loop
-			continue
+			return fmt.Errorf("failed to receive jobs: %w", err)
 		}
+		slog.Debug("received jobs", slog.Int("count", len(jobs)))
 
-		for _, stream := range entries {
-			for _, msg := range stream.Messages {
-				rawRunAt, ok := msg.Values["runAt"].(string)
-				if !ok {
-					slog.Error("runAt field is missing or not a string", slog.String("messageID", msg.ID))
-					continue
-				}
+		for _, job := range jobs {
+			respReady := make(chan io.ReadCloser, 1)
+			preloadTime := job.RunTime.Add(-time.Second * 5)
+			ctx := context.Background()
 
-				runAt, err := time.Parse(time.RFC3339, rawRunAt)
+			schedule.RunAt(ctx, preloadTime, func(ctx context.Context) {
+				blacklisted, err := blacklistChecker.IsBlacklisted(context.Background(), job.SoundCronID)
 				if err != nil {
-					slog.Error("failed to parse runAt time", slog.String("runAt", rawRunAt), slog.String("messageID", msg.ID), slog.Any("error", err))
-					continue
+					slog.Error(
+						"failed to check blacklist",
+						slog.String("soundCronID", job.SoundCronID),
+						slog.Any("error", err),
+					)
+					respReady <- nil
+					return
+				}
+				if blacklisted {
+					slog.Info(
+						"skipping blacklisted job",
+						slog.String("soundCronID", job.SoundCronID),
+					)
+					respReady <- nil
+					return
 				}
 
-				job := worker.SoundCronStreamJob{
-					Name:            msg.Values["jobName"].(string),
-					SoundCronID:     msg.Values["soundCronID"].(string),
-					GuildID:         msg.Values["guildID"].(string),
-					RunTime:         runAt,
-					TargetChannelID: msg.Values["targetChannelID"].(string),
+				endpoint := "http://minio:9000/soundoff/sound-off/dca/" + job.SoundCronID
+				if *dryRun {
+					slog.Info(
+						"Dry run mode: job would be preloaded",
+						"endpoint", endpoint,
+					)
+					return
 				}
+				slog.DebugContext(ctx, "downloading DCA file",
+					slog.String("endpoint", endpoint),
+				)
+				req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					slog.Error(
+						"failed to preload DCA file",
+						slog.String("soundCronID", job.SoundCronID),
+						slog.Any("error", err),
+					)
+					respReady <- nil
+				} else {
+					respReady <- resp.Body
+				}
+			})
 
-				fmt.Printf("%+v\n", job)
-
-				scheduledJob := schedule.ScheduledJob{
-					RunAt: job.RunTime,
-					Execute: func() {
-						err := voice.WithVoiceChannel(session, job.GuildID, job.TargetChannelID, func(_ *discordgo.Session, vc *discordgo.VoiceConnection) error {
-							slog.Info("joining voice channel", slog.String("guildID", job.GuildID), slog.String("channelID", job.TargetChannelID))
-							endpoint := "http://minio:9000/soundoff/" + job.SoundCronID
-							ctx := context.Background()
-							audioSession, err := dcaStreamer.StreamDCAOnTheFly(ctx, endpoint)
-							if err != nil {
-								return fmt.Errorf("failed to stream DCA: %w", err)
-							}
-							defer audioSession.Cleanup()
-
-							done := make(chan error, 1)
-							stream := dca.NewStream(audioSession, vc, done)
-							err = <-done
-							if err != nil {
-								if err != io.EOF {
-									return fmt.Errorf("failed to stream audio: %w", err)
-								}
-							}
-
-							_, err = stream.Finished()
-							if err != nil {
-								return fmt.Errorf("failed to finish streaming: %w", err)
-							}
-
-							err = audioSession.Error()
-							if err != nil {
-								return fmt.Errorf("audio session error: %w", err)
-							}
-
-							return nil
-						})
-						if err != nil {
-							slog.Error(
-								"failed to execute scheduled job",
-								slog.String("jobName", job.Name),
-								slog.String("soundCronID", job.SoundCronID),
-								slog.String("guildID", job.GuildID),
-								slog.String("runAt", job.RunTime.Format(time.RFC3339)),
-								slog.String("targetChannelID", job.TargetChannelID),
-								slog.Any("error", err),
-							)
+			schedule.RunAt(ctx, job.RunTime, func(ctx context.Context) {
+				if *dryRun {
+					slog.Info(
+						"Dry run mode: job would be executed",
+						getLogAttrs(job)...,
+					)
+					return
+				}
+				slog.DebugContext(ctx, "executing scheduled job", getLogAttrs(job)...)
+				respBody := <-respReady
+				if respBody == nil {
+					slog.Error(
+						"failed to preload DCA file",
+						slog.String("soundCronID", job.SoundCronID),
+					)
+					return
+				}
+				defer respBody.Close()
+				decoder := dca.NewDecoder(respBody)
+				err := voice.WithVoiceChannel(session, job.GuildID, job.TargetChannelID, func(_ *discordgo.Session, vc *discordgo.VoiceConnection) error {
+					done := make(chan error, 1)
+					stream := dca.NewStream(decoder, vc, done)
+					err := <-done
+					if err != nil {
+						if err != io.EOF {
+							return fmt.Errorf("failed to stream audio: %w", err)
 						}
-					},
+					}
+					_, err = stream.Finished()
+					if err != nil {
+						return fmt.Errorf("failed to finish streaming: %w", err)
+					}
+					return nil
+				})
+				if err != nil {
+					attrs := append(getLogAttrs(job), slog.Any("error", err))
+					slog.Error(
+						"failed to execute scheduled job",
+						attrs...,
+					)
 				}
-				scheduledJob.Schedule()
-			}
+			})
 		}
 	}
-	// unreachable
 }
 
 func main() {

@@ -1,18 +1,16 @@
 package schedule
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
-type ScheduledJob struct {
-	RunAt   time.Time
-	Execute func()
-}
-
-func (s *ScheduledJob) Schedule() {
+func RunAt(ctx context.Context, runAt time.Time, execute func(ctx context.Context)) {
 	go func() {
-		delay := time.Until(s.RunAt)
+		delay := time.Until(runAt)
 		if delay > 0 {
 			time.Sleep(delay)
 		}
-		s.Execute()
+		execute(ctx)
 	}()
 }

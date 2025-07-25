@@ -105,7 +105,6 @@ func (r *HTTPURLReader) ReadURL(ctx context.Context, url string) (io.ReadCloser,
 }
 
 func (s *FFmpegDCAStreamer) StreamDCAOnTheFly(ctx context.Context, audioURL string) (*dca.EncodeSession, error) {
-
 	options := dca.StdEncodeOptions
 	options.Bitrate = 96
 

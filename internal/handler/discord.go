@@ -15,6 +15,7 @@ import (
 	"log/slog"
 
 	"github.com/glizzus/sound-off/internal/datalayer"
+	"github.com/glizzus/sound-off/internal/dca"
 	"github.com/glizzus/sound-off/internal/generator"
 	"github.com/glizzus/sound-off/internal/presenters"
 	"github.com/glizzus/sound-off/internal/repository"
@@ -136,15 +137,16 @@ type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// AudioPiper is a struct that performs the operation
-// of downloading and immediately uploading.
-type AudioPiper struct {
+// BlobTransferService is a struct that provides
+// high-level operations for moving or getting data
+// from blob storage.
+type BlobTransferService struct {
 	blobStorage datalayer.BlobStorage
 	httpClient  HTTPClient
 	prefix      string
 }
 
-func (a *AudioPiper) Pipe(ctx context.Context, key, sourceURL string) error {
+func (a *BlobTransferService) Pipe(ctx context.Context, key, sourceURL string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -193,7 +195,7 @@ var sessions = make(map[string]*SoundCronAddFileRequest)
 
 type HandlerContext struct {
 	Repo           *repository.PostgresSoundCronRepository
-	AudioPiper     *AudioPiper
+	AudioPiper     *BlobTransferService
 	UUIDGenerator  generator.Generator[string]
 	AddFileHandler *AddFileHandler
 }
@@ -223,20 +225,15 @@ func NewInteractionHandler(
 	idGenerator generator.Generator[string],
 	blacklistAdder worker.BlacklistAdder,
 ) func(DiscordSession, *discordgo.InteractionCreate) {
-	audioPiper := &AudioPiper{
-		blobStorage: blobStorage,
-		httpClient:  http.DefaultClient,
-	}
-
 	addFileHandler := &AddFileHandler{
 		Repo:          repo,
-		AudioPiper:    audioPiper,
+		BlobStorage:   blobStorage,
+		HTTPClient:    http.DefaultClient,
 		UUIDGenerator: idGenerator,
 	}
 
 	handlerCtx := &HandlerContext{
 		Repo:           repo,
-		AudioPiper:     audioPiper,
 		UUIDGenerator:  idGenerator,
 		AddFileHandler: addFileHandler,
 	}
@@ -599,7 +596,8 @@ func HandleInteractionCreate(
 
 type AddFileHandler struct {
 	Repo          repository.SoundCronRepository
-	AudioPiper    *AudioPiper
+	BlobStorage   datalayer.BlobStorage
+	HTTPClient    HTTPClient
 	UUIDGenerator generator.Generator[string]
 }
 
@@ -677,12 +675,61 @@ func (h *AddFileHandler) ProcessAddSoundCron(
 
 	err = h.Repo.Save(ctx, soundCron)
 	if err != nil {
-		return fmt.Errorf("failed to pipe audio: %w", err)
+		return fmt.Errorf("failed to persist soundcron row in database: %w", err)
 	}
 
-	err = h.AudioPiper.Pipe(ctx, soundCron.ID, addFileRequest.Attachment.URL)
+	req, _ := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		addFileRequest.Attachment.URL,
+		nil,
+	)
+	resp, err := h.HTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to pipe audio: %w", err)
+		return fmt.Errorf("failed to download file from discord due to error: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file from discord due to bad status: %s", resp.Status)
+	}
+
+	// We need to get the audio from discord, and store it in it's
+	// original form. Then we need convert the original to dca and store
+	// that for performance.
+	//
+	// We could perform a tee where we do a lot of this in parallel, but for safety
+	// and simplicity, we do it sequentially by downloading the file right
+	// after we upload it.
+	const prefix = "sound-off"
+
+	key := fmt.Sprintf("%s/%s/%s", prefix, "uploaded", soundCron.ID)
+	err = h.BlobStorage.Put(ctx, key, resp.Body, datalayer.PutOptions{
+		Size:        resp.ContentLength,
+		ContentType: resp.Header.Get("Content-Type"),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload file to blob storage: %w", err)
+	}
+
+	uploaded, err := h.BlobStorage.Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("failed to get uploaded file from blob storage for conversion: %w", err)
+	}
+	defer uploaded.Close()
+
+	encodeSession, err := dca.EncodeMem(uploaded, dca.StdEncodeOptions)
+	if err != nil {
+		return fmt.Errorf("failed to encode DCA: %w", err)
+	}
+	defer encodeSession.Cleanup()
+
+	key = fmt.Sprintf("%s/%s/%s", prefix, "dca", soundCron.ID)
+	err = h.BlobStorage.Put(ctx, key, encodeSession, datalayer.PutOptions{
+		Size:        -1,
+		ContentType: "application/octet-stream",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload DCA file to blob storage: %w", err)
 	}
 
 	return nil

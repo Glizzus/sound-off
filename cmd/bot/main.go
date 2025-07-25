@@ -19,7 +19,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var dryRun = flag.Bool("dry-run", false, "Do not use Discord, just print job info to terminal")
+var dryRun = flag.Bool("dry-run", false, "Do not send jobs to Redis, just print job info to terminal")
 
 const guildID = "517907971481534467"
 
@@ -54,10 +54,10 @@ func runBotForever() error {
 	}
 
 	var blacklistAdder worker.BlacklistAdder
-	var jobHandler worker.JobHandler
+	var jobHandler worker.JobSender
 	if *dryRun {
-		jobHandler = &worker.PrintingJobHandler{}
-		blacklistAdder = &worker.MemoryBlacklistAdder{}
+		jobHandler = &worker.PrintingJobSender{}
+		blacklistAdder = worker.NewMemoryBlacklistAdder()
 	} else {
 		redisConfig, err := config.NewRedisConfigFromEnv()
 		if err != nil {
@@ -67,11 +67,11 @@ func runBotForever() error {
 			Addr: redisConfig.Addr,
 		})
 
-		jobHandler, err = worker.NewRedisJobHandler(redisClient)
+		jobHandler, err = worker.NewRedisJobSender(redisClient)
 		if err != nil {
 			return fmt.Errorf("failed to create Redis job handler: %w", err)
 		}
-		blacklistAdder = worker.NewRedisBlacklistAdder(redisClient)
+		blacklistAdder = worker.NewRedisBlacklistHandler(redisClient)
 	}
 
 	interactionHandler := handler.NewDiscordInteractionHandler(repository, minioStorage, blacklistAdder)

@@ -2,6 +2,9 @@ package handler
 
 import "github.com/bwmarrin/discordgo"
 
+// PingFlow is a simple flow that responds with "Pong!"
+// when the "ping" slash command is invoked.
+// It is used to test if the bot is responsive.
 var PingFlow = &Flow{
 	ID: "ping",
 	Root: &Node{

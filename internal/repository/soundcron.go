@@ -67,7 +67,7 @@ func NewPostgresSoundCronRepository(db *pgxpool.Pool) *PostgresSoundCronReposito
 	return &PostgresSoundCronRepository{db: db}
 }
 
-func SoundCronToRowParams(soundCron SoundCron) []any {
+func soundCronToRowParams(soundCron SoundCron) []any {
 	return []any{
 		soundCron.ID,
 		soundCron.Name,
@@ -103,7 +103,7 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 		file_size = EXCLUDED.file_size;
 	`
 
-	_, err = tx.Exec(ctx, soundCronQuery, SoundCronToRowParams(soundCron)...)
+	_, err = tx.Exec(ctx, soundCronQuery, soundCronToRowParams(soundCron)...)
 	if err != nil {
 		return fmt.Errorf("failed to execute sound cron query: %w", err)
 	}
