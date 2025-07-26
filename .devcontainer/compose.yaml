@@ -5,7 +5,8 @@ services:
     volumes:
       - ../:/workspaces
     environment:
-      - TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+      
 
   postgres:
     image: postgres

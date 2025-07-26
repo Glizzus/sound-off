@@ -1,0 +1,2 @@
+[infra]
+104.236.39.87 ansible_user=root ansible_ssh_private_key_file=~/.ssh/soundoff-infra

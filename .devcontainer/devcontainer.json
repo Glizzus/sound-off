@@ -9,16 +9,23 @@
 	"features": {
 		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
 		"ghcr.io/devcontainers/features/terraform:1": {},
-		"ghcr.io/devcontainers-extra/features/ffmpeg-apt-get:1": {}
+		"ghcr.io/devcontainers-extra/features/ffmpeg-apt-get:1": {},
+		"ghcr.io/hspaans/devcontainer-features/ansible-lint:2": {},
+		"ghcr.io/devcontainers-extra/features/ansible:2": {}
 	},
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				"Redis.redis-for-vscode"
-			]
+				"Redis.redis-for-vscode",
+				"redhat.ansible"
+			],
+			"settings": {
+				"ansible.lightspeed.enabled": false
+			}
 		}
-	}
+	},
 
+	"postStartCommand": ".devcontainer/postStart.sh"
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
 

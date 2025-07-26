@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_USER: soundoff
+      POSTGRES_DB: soundoff
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - /var/lib/postgresql/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+
+  redis:
+    image: redis
+    command: sh -c 'redis-server --requirepass "$(cat /run/secrets/redis_password)"'
+    secrets:
+      - redis_password
+    ports:
+      - "6379:6379"
+    restart: always
+    volumes:
+      - /var/lib/redis:/data
+
+  minio:
+    image: minio/minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: root
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+    secrets:
+      - minio_root_password
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/lib/minio:/data
+    restart: always
+
+secrets:
+  postgres_password:
+    environment: POSTGRES_PASSWORD
+  minio_root_password:
+    environment: MINIO_ROOT_PASSWORD
+  redis_password:
+    environment: REDIS_PASSWORD
