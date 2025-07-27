@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: controller
-          image: ghcr.io/glizzus/soundoff/soundoff-controller:f8972c4a99367cced644837f4fb0fad4890f8dfa
+          image: ghcr.io/glizzus/soundoff/soundoff-controller:1e29df580e4e93c61813182226da9ca8fe972bd4
           envFrom:
             - configMapRef:
                 name: soundoff-config
