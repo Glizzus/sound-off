@@ -19,11 +19,6 @@ spec:
             - configMapRef:
                 name: soundoff-config
           env:
-            - name: MINIO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: soundoff-minio-secret
-                  key: MINIO_ROOT_PASSWORD
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -34,8 +29,3 @@ spec:
                 secretKeyRef:
                   name: soundoff-discord-secret
                   key: DISCORD_TOKEN
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: soundoff-db-secret
-                  key: PGPASSWORD

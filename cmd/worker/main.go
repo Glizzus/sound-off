@@ -52,6 +52,11 @@ func runWorkerForever() error {
 		return fmt.Errorf("failed to load discord config: %w", err)
 	}
 
+	minioEndpoint := os.Getenv("MINIO_ENDPOINT")
+	if minioEndpoint == "" {
+		return fmt.Errorf("MINIO_ENDPOINT is not set")
+	}
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisConfig.Addr,
 		Password: redisConfig.Password,
@@ -115,7 +120,7 @@ func runWorkerForever() error {
 					return
 				}
 
-				endpoint := "http://minio:9000/soundoff/sound-off/dca/" + job.SoundCronID
+				endpoint := "http://" + minioEndpoint + "/soundoff/sound-off/dca/" + job.SoundCronID
 				if *dryRun {
 					slog.Info(
 						"Dry run mode: job would be preloaded",
