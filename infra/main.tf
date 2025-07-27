@@ -28,12 +28,12 @@ terraform {
 }
 
 variable "cloudflare_token" {
-  type = string
+  type      = string
   sensitive = true
 }
 
 provider "cloudflare" {
-  api_token = var.cloudflare_token 
+  api_token = var.cloudflare_token
 }
 
 locals {
@@ -49,10 +49,10 @@ resource "cloudflare_record" "infra_domains" {
 
   zone_id = "5160a6971536e107f477a6b4e6f08e86"
   name    = each.value
-  content   = digitalocean_droplet.infra_droplet.ipv4_address
+  content = digitalocean_droplet.infra_droplet.ipv4_address
   type    = "A"
 }
- 
+
 variable "do_token" {}
 
 provider "digitalocean" {
@@ -95,6 +95,12 @@ resource "digitalocean_firewall" "infra_firewall" {
   }
 
   inbound_rule {
+    protocol         = "tcp"
+    port_range       = "5432"
+    source_addresses = ["162.226.55.172"]
+  }
+
+  inbound_rule {
     protocol              = "tcp"
     port_range            = "6379"
     source_kubernetes_ids = [digitalocean_kubernetes_cluster.soundoff_cluster.id]
@@ -113,8 +119,8 @@ resource "digitalocean_firewall" "infra_firewall" {
   }
 
   outbound_rule {
-    protocol   = "udp"
-    port_range = "53"
+    protocol              = "udp"
+    port_range            = "53"
     destination_addresses = ["0.0.0.0/0"]
   }
 

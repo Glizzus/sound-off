@@ -31,20 +31,25 @@ jobs:
       - name: Create K8s Secrets
         run: |
           kubectl create secret generic soundoff-db-secret \
-            --from-literal=PGPASSWORD="${{ secrets.PGPASSWORD }}" \
+            --from-literal="PGPASSWORD=${PGPASSWORD}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl create secret generic soundoff-minio-secret \
-            --from-literal=MINIO_ROOT_PASSWORD="${{ secrets.MINIO_ROOT_PASSWORD }}" \
+            --from-literal="MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}" \
             --dry-run=client -o yaml | kubectl apply -f -
   
           kubectl create secret generic soundoff-redis-secret \
-            --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
+            --from-literal="REDIS_PASSWORD=${REDIS_PASSWORD}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl create secret generic soundoff-discord-secret \
-            --from-literal=DISCORD_TOKEN="${{ secrets.DISCORD_TOKEN }}" \
+            --from-literal="DISCORD_TOKEN=${DISCORD_TOKEN}" \
             --dry-run=client -o yaml | kubectl apply -f -
+        env:
+          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
 
       - name: Apply Kubernetes manifests
         run: |
