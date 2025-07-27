@@ -5,10 +5,11 @@ on:
       - main
     paths-ignore:
       - deploy/**
-
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
