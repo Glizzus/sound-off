@@ -6,8 +6,8 @@ data:
   MINIO_USERNAME: root
   MINIO_ENDPOINT: bucket.soundoff.glizzus.net
 
-  DISCORD_CLIENT_ID: 1096262159312371715
-  DISCORD_RUN_BOT_GLOBALLY: true
+  DISCORD_CLIENT_ID: "1096262159312371715"
+  DISCORD_RUN_BOT_GLOBALLY: "true"
 
   PGUSER: soundoff
   PGHOST: database.soundoff.glizzus.net
