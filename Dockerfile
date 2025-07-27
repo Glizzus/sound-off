@@ -12,6 +12,7 @@ FROM builder AS soundoff-worker-builder
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/soundoff-worker ./cmd/worker
 
 FROM alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1 AS soundoff-controller
+RUN apk add --no-cache ffmpeg
 COPY --from=soundoff-controller-builder /app/soundoff-controller /app/soundoff-controller
 WORKDIR /app
 ENTRYPOINT ["/app/soundoff-controller"]
