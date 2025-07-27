@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - deploy/**
+
   pull_request:
     branches:
       - main
@@ -53,5 +56,5 @@ jobs:
           git config --local user.name "GitHub Actions"
           git config --local user.email "actions@github.com"
           git add deploy/deployment.yaml
-          git commit -m "Update deployment manifests [skip ci]"
+          git commit -m "Update deployment manifests"
           git push
