@@ -26,7 +26,7 @@ jobs:
 
       - name: Save DigitalOcean kubeconfig
         run:
-          doctl kubernetes cluster kubeconfig save --expiry-seconds 600 soundoff
+          doctl kubernetes cluster kubeconfig save --expiry-seconds 600 soundoff-cluster
 
       - name: Create K8s Secrets
         run: |
