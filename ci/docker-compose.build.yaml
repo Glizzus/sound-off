@@ -1,0 +1,16 @@
+# This compose file is just used in CI to build and push Docker images.
+
+services:
+  controller:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: soundoff-controller
+    image: soundoff-controller:${GITHUB_SHA}
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: soundoff-worker
+    image: soundoff-worker:${GITHUB_SHA}

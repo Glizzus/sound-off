@@ -7,7 +7,12 @@
 	"service": "dev",
 	"workspaceFolder": "/workspaces",
 	"features": {
-		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+			// These versions are locked to fix this error:
+			// https://github.com/docker/buildx/issues/3328
+			"version": "28.2",
+			"mobyBuildxVersion": "0.25.0"
+		},
 		"ghcr.io/devcontainers/features/terraform:1": {},
 		"ghcr.io/devcontainers-extra/features/ffmpeg-apt-get:1": {},
 		"ghcr.io/hspaans/devcontainer-features/ansible-lint:2": {},
@@ -17,7 +22,8 @@
 		"vscode": {
 			"extensions": [
 				"Redis.redis-for-vscode",
-				"redhat.ansible"
+				"redhat.ansible",
+				"github.vscode-github-actions"
 			],
 			"settings": {
 				"ansible.lightspeed.enabled": false
