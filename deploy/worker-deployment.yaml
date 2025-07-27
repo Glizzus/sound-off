@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/glizzus/soundoff/soundoff-worker:1e29df580e4e93c61813182226da9ca8fe972bd4
+          image: ghcr.io/glizzus/soundoff/soundoff-worker:2fe24256d5e60bb7b6b087ffd8e0f35b23b34559
           envFrom:
             - configMapRef:
                 name: soundoff-config
