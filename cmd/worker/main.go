@@ -53,7 +53,8 @@ func runWorkerForever() error {
 	}
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr: redisConfig.Addr,
+		Addr:     redisConfig.Addr,
+		Password: redisConfig.Password,
 	})
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		return fmt.Errorf("failed to connect to redis: %w", err)

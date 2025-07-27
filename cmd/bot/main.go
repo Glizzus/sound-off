@@ -64,7 +64,8 @@ func runBotForever() error {
 			return fmt.Errorf("failed to load Redis config: %w", err)
 		}
 		redisClient := redis.NewClient(&redis.Options{
-			Addr: redisConfig.Addr,
+			Addr: 	  redisConfig.Addr,
+			Password: redisConfig.Password,
 		})
 
 		jobHandler, err = worker.NewRedisJobSender(redisClient)

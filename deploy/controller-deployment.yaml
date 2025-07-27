@@ -24,11 +24,11 @@ spec:
                 secretKeyRef:
                   name: soundoff-minio-secret
                   key: MINIO_ROOT_PASSWORD
-            - name: REDIS_ADDR
+            - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: soundoff-redis-secret
-                  key: REDIS_ADDR
+                  key: REDIS_PASSWORD
             - name: DISCORD_TOKEN
               valueFrom:
                 secretKeyRef:

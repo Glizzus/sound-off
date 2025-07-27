@@ -13,3 +13,5 @@ data:
   PGHOST: database.soundoff.glizzus.net
   PGDATABASE: soundoff
   PGSSLMODE: disable
+
+  REDIS_ADDR: redis.soundoff.glizzus.net:6379
