@@ -21,8 +21,6 @@ import (
 
 var dryRun = flag.Bool("dry-run", false, "Do not send jobs to Redis, just print job info to terminal")
 
-const guildID = "517907971481534467"
-
 func runBotForever() error {
 	flag.Parse()
 	if err := config.LoadEnv(); err != nil {
@@ -99,7 +97,7 @@ func runBotForever() error {
 		}
 	}()
 
-	if err := handler.EstablishCommands(session, guildID); err != nil {
+	if err := handler.EstablishCommands(session, discordConfig.GuildID); err != nil {
 		return fmt.Errorf("failed to establish commands: %w", err)
 	}
 

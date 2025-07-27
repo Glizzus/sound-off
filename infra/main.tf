@@ -95,12 +95,6 @@ resource "digitalocean_firewall" "infra_firewall" {
   }
 
   inbound_rule {
-    protocol         = "tcp"
-    port_range       = "5432"
-    source_addresses = ["162.226.55.172"]
-  }
-
-  inbound_rule {
     protocol              = "tcp"
     port_range            = "6379"
     source_kubernetes_ids = [digitalocean_kubernetes_cluster.soundoff_cluster.id]
