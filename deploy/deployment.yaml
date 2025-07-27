@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: controller
-          image: ghcr.io/glizzus/soundoff/soundoff-controller
+          image: ghcr.io/glizzus/soundoff/soundoff-controller:1032a906b5450877af957edda4a1a093b0e20001
           envFrom:
             - configMapRef:
                 name: soundoff-config
@@ -40,7 +40,7 @@ spec:
                 secretKeyRef:
                   name: soundoff-db-secret
                   key: PGPASSWORD
-
+        - image: ghcr.io/glizzus/soundoff/soundoff-worker:1032a906b5450877af957edda4a1a093b0e20001
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -58,7 +58,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/glizzus/soundoff/soundoff-worker
+          image: ghcr.io/glizzus/soundoff/soundoff-controller:1032a906b5450877af957edda4a1a093b0e20001
           envFrom:
             - configMapRef:
                 name: soundoff-config
@@ -83,3 +83,4 @@ spec:
                 secretKeyRef:
                   name: soundoff-db-secret
                   key: PGPASSWORD
+        - image: ghcr.io/glizzus/soundoff/soundoff-worker:1032a906b5450877af957edda4a1a093b0e20001
