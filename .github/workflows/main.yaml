@@ -45,8 +45,8 @@ jobs:
 
       - name: Update deployment manifests
         run: |
-          yq eval -i '.spec.template.spec.containers[0].image = "ghcr.io/glizzus/soundoff/soundoff-controller:${{ github.sha }}"' deploy/deployment.yaml
-          yq eval -i '.spec.template.spec.containers[1].image = "ghcr.io/glizzus/soundoff/soundoff-worker:${{ github.sha }}"' deploy/deployment.yaml
+          yq eval -i '.spec.template.spec.containers[0].image = "ghcr.io/glizzus/soundoff/soundoff-controller:${{ github.sha }}"' deploy/controller-deployment.yaml
+          yq eval -i '.spec.template.spec.containers[0].image = "ghcr.io/glizzus/soundoff/soundoff-worker:${{ github.sha }}"' deploy/worker-deployment.yaml
 
       - name: Commit changes back to repo
         run: |
