@@ -4,6 +4,11 @@ terraform {
       source  = "digitalocean/digitalocean"
       version = "~> 2.0"
     }
+
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
 
   backend "s3" {
@@ -22,6 +27,32 @@ terraform {
   }
 }
 
+variable "cloudflare_token" {
+  type = string
+  sensitive = true
+}
+
+provider "cloudflare" {
+  api_token = var.cloudflare_token 
+}
+
+locals {
+  domains = [
+    "database.soundoff.glizzus.net",
+    "bucket.soundoff.glizzus.net",
+    "redis.soundoff.glizzus.net",
+  ]
+}
+
+resource "cloudflare_record" "infra_domains" {
+  for_each = { for domain in local.domains : domain => domain }
+
+  zone_id = "5160a6971536e107f477a6b4e6f08e86"
+  name    = each.value
+  content   = digitalocean_droplet.infra_droplet.ipv4_address
+  type    = "A"
+}
+ 
 variable "do_token" {}
 
 provider "digitalocean" {

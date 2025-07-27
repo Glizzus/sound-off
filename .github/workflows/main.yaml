@@ -24,5 +24,31 @@ jobs:
       - name: Run Tests
         run: go test ./...
 
-      - name: Build Docker image
-        run: docker build -t soundoff:${GITHUB_SHA} .
+      - name: Build Docker images
+        run: docker compose -f ci/docker-compose.build.yaml build
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker images
+        run: docker compose -f ci/docker-compose.build.yaml push
+
+      - name: Install yq
+        run: go install github.com/mikefarah/yq/v4@latest
+
+      - name: Update deployment manifests
+        run: |
+          yq eval -i '.spec.template.spec.containers[0].image = "ghcr.io/glizzus/soundoff/soundoff-controller:${{ github.sha }}"' deploy/deployment.yaml
+          yq eval -i '.spec.template.spec.containers[1].image = "ghcr.io/glizzus/soundoff/soundoff-worker:${{ github.sha }}"' deploy/deployment.yaml
+
+      - name: Commit changes back to repo
+        run: |
+          git config --local user.name "GitHub Actions"
+          git config --local user.email "actions@github.com"
+          git add deploy/deployment.yaml
+          git commit -m "Update deployment manifests [skip ci]"
+          git push

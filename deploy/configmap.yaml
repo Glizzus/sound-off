@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soundoff-config
+data:
+  MINIO_USERNAME: root
+  MINIO_ENDPOINT: bucket.soundoff.glizzus.net
+
+  DISCORD_CLIENT_ID: 1096262159312371715
+  DISCORD_RUN_BOT_GLOBALLY: true
+
+  PGUSER: soundoff
+  PGHOST: database.soundoff.glizzus.net
+  PGDATABASE: soundoff
+  PGSSLMODE: disable

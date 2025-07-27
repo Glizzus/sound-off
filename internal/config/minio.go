@@ -10,7 +10,7 @@ type MinioConfig struct {
 	Endpoint string `env:"MINIO_ENDPOINT, required"`
 	Username string `env:"MINIO_USERNAME, required"`
 	Password string `env:"MINIO_PASSWORD, required"`
-	Bucket   string `env:"MINIO_BUCKET, required"`
+	Bucket   string `env:"MINIO_BUCKET, default=soundoff"`
 }
 
 func NewMinioConfigFromEnv() (*MinioConfig, error) {

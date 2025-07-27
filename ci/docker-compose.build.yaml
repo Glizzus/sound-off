@@ -6,11 +6,11 @@ services:
       context: ..
       dockerfile: Dockerfile
       target: soundoff-controller
-    image: soundoff-controller:${GITHUB_SHA}
+    image: ghcr.io/glizzus/soundoff/soundoff-controller:${GITHUB_SHA}
 
   worker:
     build:
       context: ..
       dockerfile: Dockerfile
       target: soundoff-worker
-    image: soundoff-worker:${GITHUB_SHA}
+    image: ghcr.io/glizzus/soundoff/soundoff-worker:${GITHUB_SHA}

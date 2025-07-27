@@ -1,0 +1,50 @@
+name: CD Pipeline
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    if : ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Set up doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig
+        run:
+          doctl kubernetes cluster kubeconfig save --expiry-seconds 600 soundoff
+
+      - name: Create K8s Secrets
+        run: |
+          kubectl create secret generic soundoff-db-secret \
+            --from-literal=PGPASSWORD="${{ secrets.PGPASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic soundoff-minio-secret \
+            --from-literal=MINIO_ROOT_PASSWORD="${{ secrets.MINIO_ROOT_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          kubectl create secret generic soundoff-redis-secret \
+            --from-literal=REDIS_ADDR="${{ secrets.REDIS_ADDR }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic soundoff-discord-secret \
+            --from-literal=DISCORD_TOKEN="${{ secrets.DISCORD_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f deploy/
