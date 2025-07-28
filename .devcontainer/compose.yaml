@@ -1,12 +1,11 @@
 services:
   dev:
-    image: mcr.microsoft.com/devcontainers/go:1-1.24-bookworm
+    build: .
     entrypoint: ["sleep", "infinity"]
     volumes:
       - ../:/workspaces
     environment:
       TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
-      
 
   postgres:
     image: postgres
@@ -30,7 +29,7 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
-  
+
   redis:
     image: redis:latest
     ports:

@@ -27,7 +27,8 @@
 		}
 	},
 
-	"postStartCommand": ".devcontainer/postStart.sh"
+	"postStartCommand": ".devcontainer/postStart.sh",
+	"postAttachCommand": ".devcontainer/postAttach.sh",
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
 
