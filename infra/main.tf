@@ -32,31 +32,22 @@ variable "cloudflare_token" {
   sensitive = true
 }
 
+variable "do_token" {
+  type      = string
+  sensitive = true
+}
+
 provider "cloudflare" {
   api_token = var.cloudflare_token
 }
 
-locals {
-  domains = [
-    "database.soundoff.glizzus.net",
-    "bucket.soundoff.glizzus.net",
-    "redis.soundoff.glizzus.net",
-  ]
-}
-
-resource "cloudflare_record" "infra_domains" {
-  for_each = { for domain in local.domains : domain => domain }
-
-  zone_id = "5160a6971536e107f477a6b4e6f08e86"
-  name    = each.value
-  content = digitalocean_droplet.infra_droplet.ipv4_address
-  type    = "A"
-}
-
-variable "do_token" {}
-
 provider "digitalocean" {
   token = var.do_token
+}
+
+resource "digitalocean_ssh_key" "infra_ssh_key" {
+  name       = "infra-ssh-key"
+  public_key = file(pathexpand("~/.ssh/soundoff-infra.pub"))
 }
 
 resource "digitalocean_droplet" "infra_droplet" {
@@ -65,9 +56,7 @@ resource "digitalocean_droplet" "infra_droplet" {
   size     = "s-2vcpu-2gb"
   image    = "fedora-42-x64"
   ssh_keys = [digitalocean_ssh_key.infra_ssh_key.id]
-  tags = [
-    "sound-off:infra"
-  ]
+  tags     = ["sound-off:infra"]
 }
 
 resource "digitalocean_kubernetes_cluster" "soundoff_cluster" {
@@ -83,7 +72,6 @@ resource "digitalocean_kubernetes_cluster" "soundoff_cluster" {
   }
 }
 
-# This digitalocean firewall only allows the cluster to access the infra droplet.
 resource "digitalocean_firewall" "infra_firewall" {
   name        = "infra-firewall"
   droplet_ids = [digitalocean_droplet.infra_droplet.id]
@@ -125,6 +113,19 @@ resource "digitalocean_firewall" "infra_firewall" {
   }
 }
 
+resource "cloudflare_record" "infra_domains" {
+  for_each = toset([
+    "database.soundoff.glizzus.net",
+    "bucket.soundoff.glizzus.net",
+    "redis.soundoff.glizzus.net"
+  ])
+
+  zone_id = "5160a6971536e107f477a6b4e6f08e86"
+  name    = each.value
+  content = digitalocean_droplet.infra_droplet.ipv4_address
+  type    = "A"
+}
+
 resource "digitalocean_project" "soundoff_project" {
   name        = "Sound Off"
   purpose     = "Web Application"
@@ -135,9 +136,4 @@ resource "digitalocean_project" "soundoff_project" {
     digitalocean_droplet.infra_droplet.urn,
     digitalocean_kubernetes_cluster.soundoff_cluster.urn,
   ]
-}
-
-resource "digitalocean_ssh_key" "infra_ssh_key" {
-  name       = "infra-ssh-key"
-  public_key = file(pathexpand("~/.ssh/soundoff-infra.pub"))
 }

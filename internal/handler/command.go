@@ -60,14 +60,9 @@ var Commands = []*discordgo.ApplicationCommand{
 }
 
 func EstablishCommands(s *discordgo.Session, guildID string) error {
-	if s.State.User == nil {
-		return fmt.Errorf("session is not established")
-	}
-	for _, command := range Commands {
-		_, err := s.ApplicationCommandCreate(s.State.User.ID, guildID, command)
-		if err != nil {
-			return err
-		}
+	_, err := s.ApplicationCommandBulkOverwrite(s.State.User.ID, guildID, Commands)
+	if err != nil {
+		return fmt.Errorf("failed to establish commands: %w", err)
 	}
 	return nil
 }

@@ -19,3 +19,5 @@ if [ ! -z "$DIGITALOCEAN_ACCESS_TOKEN" ]; then
         doctl kubernetes cluster kubeconfig save soundoff-cluster
     fi
 fi
+
+lefthook install

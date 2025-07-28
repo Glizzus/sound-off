@@ -22,13 +22,17 @@
 				"github.vscode-github-actions"
 			],
 			"settings": {
-				"ansible.lightspeed.enabled": false
+				"ansible.lightspeed.enabled": false,
+				"files.associations": {
+					"aws_credentials*": "ini",
+					".env.example": "properties"
+				}
 			}
 		}
 	},
 
 	"postStartCommand": ".devcontainer/postStart.sh",
-	"postAttachCommand": ".devcontainer/postAttach.sh",
+	"postAttachCommand": ".devcontainer/postAttach.sh"
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
 
