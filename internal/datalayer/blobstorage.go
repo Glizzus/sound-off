@@ -17,6 +17,7 @@ type PutOptions struct {
 type BlobStorage interface {
 	Put(ctx context.Context, key string, data io.Reader, opts PutOptions) error
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
+	Delete(ctx context.Context, key string) error
 }
 
 type MinioStorage struct {
@@ -90,4 +91,8 @@ func (s *MinioStorage) Get(ctx context.Context, key string) (io.ReadCloser, erro
 		return nil, err
 	}
 	return obj, nil
+}
+
+func (s *MinioStorage) Delete(ctx context.Context, key string) error {
+	return s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
 }

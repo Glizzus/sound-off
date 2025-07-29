@@ -62,7 +62,7 @@ func runBotForever() error {
 			return fmt.Errorf("failed to load Redis config: %w", err)
 		}
 		redisClient := redis.NewClient(&redis.Options{
-			Addr: 	  redisConfig.Addr,
+			Addr:     redisConfig.Addr,
 			Password: redisConfig.Password,
 		})
 
@@ -114,14 +114,13 @@ func runBotForever() error {
 
 				var streamJobs []worker.SoundCronStreamJob
 				for _, job := range upcoming {
-					channels, err := session.GuildChannels(job.GuildID)
+					guild, err := session.State.Guild(job.GuildID)
 					if err != nil {
-						slog.Error("failed to get guild channels", "guildID", job.GuildID, "error", err)
+						slog.Error("failed to get guild", "guildID", job.GuildID, "error", err)
 						continue
 					}
-					maxAttendedChannel := voice.MaxAttendedChannel(channels)
-					if maxAttendedChannel == nil {
-						slog.Debug("no attended channels found for guild", "guildID", job.GuildID)
+					maxAttendedChannelID := voice.MaxAttendedVoiceChannel(guild.VoiceStates)
+					if maxAttendedChannelID == "" {
 						continue
 					}
 					streamJobs = append(streamJobs, worker.SoundCronStreamJob{
@@ -129,7 +128,7 @@ func runBotForever() error {
 						Name:            job.Name,
 						GuildID:         job.GuildID,
 						RunTime:         job.RunTime,
-						TargetChannelID: maxAttendedChannel.ID,
+						TargetChannelID: maxAttendedChannelID,
 					})
 				}
 

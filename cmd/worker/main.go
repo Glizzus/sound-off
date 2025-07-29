@@ -93,7 +93,6 @@ func runWorkerForever() error {
 		if err != nil {
 			return fmt.Errorf("failed to receive jobs: %w", err)
 		}
-		slog.Debug("received jobs", slog.Int("count", len(jobs)))
 
 		for _, job := range jobs {
 			respReady := make(chan io.ReadCloser, 1)
@@ -128,9 +127,6 @@ func runWorkerForever() error {
 					)
 					return
 				}
-				slog.DebugContext(ctx, "downloading DCA file",
-					slog.String("endpoint", endpoint),
-				)
 				req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
@@ -153,7 +149,6 @@ func runWorkerForever() error {
 					)
 					return
 				}
-				slog.DebugContext(ctx, "executing scheduled job", getLogAttrs(job)...)
 				respBody := <-respReady
 				if respBody == nil {
 					slog.Error(
