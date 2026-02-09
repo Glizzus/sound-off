@@ -62,12 +62,13 @@ resource "digitalocean_droplet" "infra_droplet" {
 resource "digitalocean_kubernetes_cluster" "soundoff_cluster" {
   name    = "soundoff-cluster"
   region  = "nyc3"
-  version = "1.33.1-do.2"
+  version = "1.34.1-do.3"
+  ha      = false
 
   node_pool {
     name       = "default"
     size       = "s-1vcpu-2gb"
-    node_count = 2
+    node_count = 1
     auto_scale = false
   }
 }

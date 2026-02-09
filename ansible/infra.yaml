@@ -44,7 +44,6 @@
         src: docker-compose.yaml
         dest: /opt/infra/docker-compose.yaml
         mode: '0644'
-      notify: Run docker-compose
 
     - name: Run docker-compose
       ansible.builtin.command:

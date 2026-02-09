@@ -12,8 +12,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/glizzus/sound-off/internal/config"
-	"github.com/glizzus/sound-off/internal/dca"
 	"github.com/glizzus/sound-off/internal/handler"
+	"github.com/glizzus/sound-off/internal/opus"
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/voice"
 	"github.com/glizzus/sound-off/internal/worker"
@@ -119,7 +119,7 @@ func runWorkerForever() error {
 					return
 				}
 
-				endpoint := "http://" + minioEndpoint + "/soundoff/sound-off/dca/" + job.SoundCronID
+				endpoint := "http://" + minioEndpoint + "/soundoff/sound-off/opus/" + job.SoundCronID
 				if *dryRun {
 					slog.Info(
 						"Dry run mode: job would be preloaded",
@@ -131,7 +131,7 @@ func runWorkerForever() error {
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					slog.Error(
-						"failed to preload DCA file",
+						"failed to preload opus file",
 						slog.String("soundCronID", job.SoundCronID),
 						slog.Any("error", err),
 					)
@@ -152,27 +152,15 @@ func runWorkerForever() error {
 				respBody := <-respReady
 				if respBody == nil {
 					slog.Error(
-						"failed to preload DCA file",
+						"failed to preload opus file",
 						slog.String("soundCronID", job.SoundCronID),
 					)
 					return
 				}
 				defer respBody.Close()
-				decoder := dca.NewDecoder(respBody)
+				reader := opus.NewFrameReader(respBody)
 				err := voice.WithVoiceChannel(session, job.GuildID, job.TargetChannelID, func(_ *discordgo.Session, vc *discordgo.VoiceConnection) error {
-					done := make(chan error, 1)
-					stream := dca.NewStream(decoder, vc, done)
-					err := <-done
-					if err != nil {
-						if err != io.EOF {
-							return fmt.Errorf("failed to stream audio: %w", err)
-						}
-					}
-					_, err = stream.Finished()
-					if err != nil {
-						return fmt.Errorf("failed to finish streaming: %w", err)
-					}
-					return nil
+					return opus.StreamToVoice(reader, vc)
 				})
 				if err != nil {
 					attrs := append(getLogAttrs(job), slog.Any("error", err))

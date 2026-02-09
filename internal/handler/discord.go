@@ -15,7 +15,7 @@ import (
 	"log/slog"
 
 	"github.com/glizzus/sound-off/internal/datalayer"
-	"github.com/glizzus/sound-off/internal/dca"
+	"github.com/glizzus/sound-off/internal/opus"
 	"github.com/glizzus/sound-off/internal/generator"
 	"github.com/glizzus/sound-off/internal/presenters"
 	"github.com/glizzus/sound-off/internal/repository"
@@ -693,13 +693,8 @@ func (h *AddFileHandler) ProcessAddSoundCron(
 		return fmt.Errorf("failed to download file from discord due to bad status: %s", resp.Status)
 	}
 
-	// We need to get the audio from discord, and store it in it's
-	// original form. Then we need convert the original to dca and store
-	// that for performance.
-	//
-	// We could perform a tee where we do a lot of this in parallel, but for safety
-	// and simplicity, we do it sequentially by downloading the file right
-	// after we upload it.
+	// Store the original audio from Discord, then encode it to opus frames
+	// for playback. We do this sequentially for simplicity.
 	const prefix = "sound-off"
 
 	key := fmt.Sprintf("%s/%s/%s", prefix, "uploaded", soundCron.ID)
@@ -717,19 +712,19 @@ func (h *AddFileHandler) ProcessAddSoundCron(
 	}
 	defer uploaded.Close()
 
-	encodeSession, err := dca.EncodeMem(uploaded, dca.StdEncodeOptions)
+	encoded, err := opus.Encode(uploaded)
 	if err != nil {
-		return fmt.Errorf("failed to encode DCA: %w", err)
+		return fmt.Errorf("failed to encode opus: %w", err)
 	}
-	defer encodeSession.Cleanup()
+	defer encoded.Close()
 
-	key = fmt.Sprintf("%s/%s/%s", prefix, "dca", soundCron.ID)
-	err = h.BlobStorage.Put(ctx, key, encodeSession, datalayer.PutOptions{
+	key = fmt.Sprintf("%s/%s/%s", prefix, "opus", soundCron.ID)
+	err = h.BlobStorage.Put(ctx, key, encoded, datalayer.PutOptions{
 		Size:        -1,
 		ContentType: "application/octet-stream",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to upload DCA file to blob storage: %w", err)
+		return fmt.Errorf("failed to upload opus file to blob storage: %w", err)
 	}
 
 	return nil
