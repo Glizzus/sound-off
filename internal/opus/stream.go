@@ -14,6 +14,9 @@ var ErrVoiceConnClosed = errors.New("voice connection send timeout")
 // voice connection. It blocks until all frames are sent or an error occurs.
 // Returns nil on clean EOF.
 func StreamToVoice(source *FrameReader, vc *discordgo.VoiceConnection) error {
+	timer := time.NewTimer(time.Minute)
+	defer timer.Stop()
+
 	for {
 		frame, err := source.ReadFrame()
 		if err != nil {
@@ -23,10 +26,9 @@ func StreamToVoice(source *FrameReader, vc *discordgo.VoiceConnection) error {
 			return err
 		}
 
-		timer := time.NewTimer(time.Minute)
+		timer.Reset(time.Minute)
 		select {
 		case vc.OpusSend <- frame:
-			timer.Stop()
 		case <-timer.C:
 			return ErrVoiceConnClosed
 		}

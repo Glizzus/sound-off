@@ -9,19 +9,20 @@ import (
 	"github.com/jonas747/ogg"
 )
 
-// Encode takes any audio as an io.Reader, runs FFmpeg to transcode it to Opus,
-// and returns an io.Reader that produces length-prefixed Opus frames.
-// The caller should read until EOF. The returned io.ReadCloser must be closed
-// to clean up the FFmpeg process.
-func Encode(r io.Reader) (io.ReadCloser, error) {
-	ffmpeg := exec.Command("ffmpeg",
+// TranscodeFunc takes raw audio and returns a stream of OGG/Opus data.
+// The returned ReadCloser must be closed to release any underlying resources.
+type TranscodeFunc func(r io.Reader) (io.ReadCloser, error)
+
+// FFmpegTranscode is the default TranscodeFunc that shells out to ffmpeg.
+func FFmpegTranscode(r io.Reader) (io.ReadCloser, error) {
+	cmd := exec.Command("ffmpeg",
 		"-i", "pipe:0",
 		"-vn",
 		"-map", "0:a",
 		"-acodec", "libopus",
 		"-f", "ogg",
 		"-vbr", "on",
-		"-compression_level", "10",
+		"-compression_level", "5",
 		"-ar", "48000",
 		"-ac", "2",
 		"-b:a", "64000",
@@ -32,14 +33,38 @@ func Encode(r io.Reader) (io.ReadCloser, error) {
 		"pipe:1",
 	)
 
-	ffmpeg.Stdin = r
+	cmd.Stdin = r
 
-	stdout, err := ffmpeg.StdoutPipe()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ffmpeg.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	return &cmdReadCloser{ReadCloser: stdout, cmd: cmd}, nil
+}
+
+// Encoder transcodes audio to length-prefixed Opus frames. The transcoding
+// step is provided via a TranscodeFunc, keeping the OGG demux → frames
+// pipeline generic.
+type Encoder struct {
+	Transcode TranscodeFunc
+}
+
+// NewEncoder returns an Encoder that uses the given TranscodeFunc.
+func NewEncoder(fn TranscodeFunc) *Encoder {
+	return &Encoder{Transcode: fn}
+}
+
+// Encode reads audio from r, transcodes it to OGG/Opus via the configured
+// TranscodeFunc, then demuxes the OGG stream into length-prefixed Opus frames.
+// The returned io.ReadCloser must be closed to clean up resources.
+func (e *Encoder) Encode(r io.Reader) (io.ReadCloser, error) {
+	oggStream, err := e.Transcode(r)
+	if err != nil {
 		return nil, err
 	}
 
@@ -47,9 +72,9 @@ func Encode(r io.Reader) (io.ReadCloser, error) {
 
 	go func() {
 		defer pw.Close()
-		defer ffmpeg.Wait()
+		defer oggStream.Close()
 
-		decoder := ogg.NewPacketDecoder(ogg.NewDecoder(stdout))
+		decoder := ogg.NewPacketDecoder(ogg.NewDecoder(oggStream))
 
 		// Skip the first 2 OGG metadata packets.
 		skip := 2
@@ -77,21 +102,25 @@ func Encode(r io.Reader) (io.ReadCloser, error) {
 		}
 	}()
 
-	return &encodeCloser{ReadCloser: pr, cmd: ffmpeg}, nil
+	return pr, nil
 }
 
-// encodeCloser wraps the pipe reader and ensures the FFmpeg process is cleaned up.
-type encodeCloser struct {
+// Encode is a convenience function that transcodes using FFmpeg.
+func Encode(r io.Reader) (io.ReadCloser, error) {
+	return NewEncoder(FFmpegTranscode).Encode(r)
+}
+
+// cmdReadCloser wraps a command's stdout and kills the process on Close.
+type cmdReadCloser struct {
 	io.ReadCloser
 	cmd *exec.Cmd
 }
 
-func (e *encodeCloser) Close() error {
-	err := e.ReadCloser.Close()
-	// Kill FFmpeg if still running (e.g. pipe closed early).
-	if e.cmd.Process != nil {
-		e.cmd.Process.Kill()
+func (c *cmdReadCloser) Close() error {
+	err := c.ReadCloser.Close()
+	if c.cmd.Process != nil {
+		c.cmd.Process.Kill()
 	}
-	e.cmd.Wait()
+	c.cmd.Wait()
 	return err
 }
