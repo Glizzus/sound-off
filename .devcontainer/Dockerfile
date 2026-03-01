@@ -1,5 +1,9 @@
 FROM mcr.microsoft.com/devcontainers/go:1-1.24-bookworm
 
+RUN curl -ssL "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl" -o kubectl && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/
+
 ARG DOCTL_VERSION=1.135.0
 RUN curl -sSL https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz | \
     tar -xz -C /usr/local/bin && \
