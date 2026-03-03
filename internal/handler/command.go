@@ -14,6 +14,13 @@ var baseAddCommandOptions = []*discordgo.ApplicationCommandOption{
 		Required:    false,
 	},
 	{
+		Name:         "timezone",
+		Type:         discordgo.ApplicationCommandOptionString,
+		Description:  `IANA timezone for the cron expression (e.g. "America/New_York"). Defaults to UTC.`,
+		Required:     false,
+		Autocomplete: true,
+	},
+	{
 		Name:        "name",
 		Type:        discordgo.ApplicationCommandOptionString,
 		Description: "The name of the soundcron. Defaults to the file name if not provided.",

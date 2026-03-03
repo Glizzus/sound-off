@@ -16,6 +16,7 @@ type SoundCron struct {
 	Name     string
 	GuildID  string
 	Cron     string
+	Timezone string
 	FileSize int64
 
 	// LastAccessed is the last time a user interacted with this soundcron.
@@ -73,6 +74,7 @@ func soundCronToRowParams(soundCron SoundCron) []any {
 		soundCron.Name,
 		soundCron.GuildID,
 		soundCron.Cron,
+		soundCron.Timezone,
 		soundCron.FileSize,
 	}
 }
@@ -93,13 +95,14 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 	}()
 
 	const soundCronQuery = `
-	INSERT INTO soundcron (id, soundcron_name, guild_id, cron, file_size)
-	VALUES ($1, $2, $3, $4, $5)
+	INSERT INTO soundcron (id, soundcron_name, guild_id, cron, timezone, file_size)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	ON CONFLICT (id)
 	DO UPDATE SET
 		soundcron_name = EXCLUDED.soundcron_name,
 		guild_id = EXCLUDED.guild_id,
 		cron = EXCLUDED.cron,
+		timezone = EXCLUDED.timezone,
 		file_size = EXCLUDED.file_size;
 	`
 
@@ -108,7 +111,7 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 		return fmt.Errorf("failed to execute sound cron query: %w", err)
 	}
 
-	err = doRefresh(ctx, tx, soundCron.ID, soundCron.Cron)
+	err = doRefresh(ctx, tx, soundCron.ID, soundCron.Cron, soundCron.Timezone)
 	if err != nil {
 		return fmt.Errorf("failed to refresh sound cron: %w", err)
 	}
@@ -122,7 +125,7 @@ func (r *PostgresSoundCronRepository) Save(ctx context.Context, soundCron SoundC
 
 func (r *PostgresSoundCronRepository) List(ctx context.Context, guildID string) ([]SoundCron, error) {
 	const query = `
-	SELECT id, soundcron_name, guild_id, cron, file_size, last_accessed
+	SELECT id, soundcron_name, guild_id, cron, timezone, file_size, last_accessed
 	FROM soundcron
 	WHERE guild_id = $1
 	`
@@ -140,6 +143,7 @@ func (r *PostgresSoundCronRepository) List(ctx context.Context, guildID string) 
 			&sc.Name,
 			&sc.GuildID,
 			&sc.Cron,
+			&sc.Timezone,
 			&sc.FileSize,
 			&sc.LastAccessed,
 		)
@@ -188,8 +192,12 @@ func (r *PostgresSoundCronRepository) Pull(ctx context.Context, within time.Time
 	return soundCronJobs, nil
 }
 
-func doRefresh(ctx context.Context, execer pgxExecer, soundCronID, cron string) error {
-	nextRunTimes, err := schedule.NextRunTimes(cron, 5)
+func doRefresh(ctx context.Context, execer pgxExecer, soundCronID, cron, timezone string) error {
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return fmt.Errorf("invalid timezone %q: %w", timezone, err)
+	}
+	nextRunTimes, err := schedule.NextRunTimes(cron, loc, 5)
 	if err != nil {
 		return fmt.Errorf("failed to get next run times: %w", err)
 	}
@@ -209,12 +217,12 @@ func doRefresh(ctx context.Context, execer pgxExecer, soundCronID, cron string) 
 
 func (r *PostgresSoundCronRepository) Refresh(ctx context.Context, soundCronID string) error {
 	const getCronQuery = `
-	SELECT cron
+	SELECT cron, timezone
 	FROM soundcron
 	WHERE id = $1
 	`
-	var cron string
-	err := r.db.QueryRow(ctx, getCronQuery, soundCronID).Scan(&cron)
+	var cron, timezone string
+	err := r.db.QueryRow(ctx, getCronQuery, soundCronID).Scan(&cron, &timezone)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return fmt.Errorf("sound cron not found: %w", err)
@@ -222,7 +230,7 @@ func (r *PostgresSoundCronRepository) Refresh(ctx context.Context, soundCronID s
 		return fmt.Errorf("failed to query sound cron: %w", err)
 	}
 
-	err = doRefresh(ctx, r.db, soundCronID, cron)
+	err = doRefresh(ctx, r.db, soundCronID, cron, timezone)
 	if err != nil {
 		return fmt.Errorf("failed to refresh sound cron: %w", err)
 	}

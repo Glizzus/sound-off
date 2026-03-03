@@ -17,3 +17,8 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opent
     rm ./install-opentofu.sh
 
 USER vscode
+
+RUN curl -fsSL https://claude.ai/install.sh -o install-claude.sh && \
+    chmod +x install-claude.sh && \
+    ./install-claude.sh && \
+    rm install-claude.sh

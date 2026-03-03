@@ -1,0 +1,2 @@
+ALTER TABLE soundcron
+ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC';

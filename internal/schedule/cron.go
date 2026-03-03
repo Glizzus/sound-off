@@ -7,10 +7,10 @@ import (
 	"github.com/hashicorp/cronexpr"
 )
 
-// NextRunTimes returns the next N run times that a cron expression will run.
-// Each run time is in UTC.
-func NextRunTimes(cron string, n int) ([]time.Time, error) {
-	cutoff := time.Now().UTC()
+// NextRunTimes returns the next N run times that a cron expression will run,
+// evaluated in the given location.
+func NextRunTimes(cron string, loc *time.Location, n int) ([]time.Time, error) {
+	cutoff := time.Now().In(loc)
 	return NextRunTimesAfter(cron, cutoff, n)
 }
 

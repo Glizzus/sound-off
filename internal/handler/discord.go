@@ -48,6 +48,7 @@ var ReadyLog = func(s *discordgo.Session, r *discordgo.Ready) {
 type SoundCronAddFileRequest struct {
 	Attachment *discordgo.MessageAttachment
 	Cron       string
+	Timezone   string
 	Name       string
 }
 
@@ -61,6 +62,7 @@ func CommandToAddFileRequest(
 	}
 
 	var cron string
+	var timezone string
 	var name string
 
 	for _, option := range options {
@@ -70,6 +72,11 @@ func CommandToAddFileRequest(
 				return nil, fmt.Errorf("invalid type for cron option")
 			}
 			cron = option.StringValue()
+		case "timezone":
+			if option.Type != discordgo.ApplicationCommandOptionString {
+				return nil, fmt.Errorf("invalid type for timezone option")
+			}
+			timezone = option.StringValue()
 		case "name":
 			if option.Type != discordgo.ApplicationCommandOptionString {
 				return nil, fmt.Errorf("invalid type for name option")
@@ -85,6 +92,7 @@ func CommandToAddFileRequest(
 	return &SoundCronAddFileRequest{
 		Attachment: attachment,
 		Cron:       cron,
+		Timezone:   timezone,
 		Name:       name,
 	}, nil
 }
@@ -570,6 +578,11 @@ func HandleInteractionCreate(
 				slog.Warn("failed to respond to component", "error", err)
 			}
 		}
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		command := i.ApplicationCommandData()
+		if command.Name == "soundcron" {
+			HandleTimezoneAutocomplete(s, i)
+		}
 	case discordgo.InteractionModalSubmit:
 		modal := i.ModalSubmitData()
 		switch modal.CustomID {
@@ -637,11 +650,22 @@ func (h *AddFileHandler) ProcessAddSoundCron(
 		return fmt.Errorf("failed to generate UUID: %w", err)
 	}
 
+	timezone := addFileRequest.Timezone
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	if _, err := time.LoadLocation(timezone); err != nil {
+		return &UserError{
+			Message: fmt.Sprintf("%q is not a valid timezone. Use an IANA name like \"America/New_York\".", timezone),
+		}
+	}
+
 	soundCron := repository.SoundCron{
 		ID:       id,
 		Name:     addFileRequest.Name,
 		GuildID:  guildID,
 		Cron:     addFileRequest.Cron,
+		Timezone: timezone,
 		FileSize: int64(addFileRequest.Attachment.Size),
 	}
 
