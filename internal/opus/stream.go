@@ -2,21 +2,16 @@ package opus
 
 import (
 	"errors"
+	"fmt"
 	"io"
-	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/voice"
 )
-
-var ErrVoiceConnClosed = errors.New("voice connection send timeout")
 
 // StreamToVoice reads Opus frames from source and sends them to the Discord
 // voice connection. It blocks until all frames are sent or an error occurs.
 // Returns nil on clean EOF.
-func StreamToVoice(source *FrameReader, vc *discordgo.VoiceConnection) error {
-	timer := time.NewTimer(time.Minute)
-	defer timer.Stop()
-
+func StreamToVoice(source *FrameReader, vc voice.Conn) error {
 	for {
 		frame, err := source.ReadFrame()
 		if err != nil {
@@ -26,11 +21,9 @@ func StreamToVoice(source *FrameReader, vc *discordgo.VoiceConnection) error {
 			return err
 		}
 
-		timer.Reset(time.Minute)
-		select {
-		case vc.OpusSend <- frame:
-		case <-timer.C:
-			return ErrVoiceConnClosed
+		_, err = vc.UDP().Write(frame)
+		if err != nil {
+			return fmt.Errorf("failed to write opus frame: %w", err)
 		}
 	}
 }

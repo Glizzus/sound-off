@@ -6,6 +6,7 @@ services:
       - ../:/workspaces
     environment:
       TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+      PKG_CONFIG_PATH: /home/vscode/.local/lib/pkgconfig
 
   postgres:
     image: postgres

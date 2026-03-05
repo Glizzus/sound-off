@@ -1,10 +1,12 @@
 package voice
 
 import (
+	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/snowflake/v2"
 )
 
 // MaxAttendedVoiceChannel returns the ID of the voice channel with the most members.
@@ -32,32 +34,33 @@ func MaxAttendedVoiceChannel(vcs []*discordgo.VoiceState) string {
 }
 
 // VoiceChannelFunc is a function type that takes a discordgo session and a voice connection.
-type VoiceChannelFunc func(*discordgo.Session, *discordgo.VoiceConnection) error
+type VoiceChannelFunc func(voice.Conn) error
 
 // WithVoiceChannel is a utility function
 // that joins a voice channel and executes a callback.
 // It handles the voice state updates for you.
-func WithVoiceChannel(s *discordgo.Session, guildId, channelID string, callback VoiceChannelFunc) error {
-	voiceConn, err := s.ChannelVoiceJoin(guildId, channelID, false, true)
+func WithVoiceChannel(ctx context.Context,manager voice.Manager, guildIDStr, channelIDStr string, callback VoiceChannelFunc) error {
+	guildId, err := snowflake.Parse(guildIDStr)
 	if err != nil {
-		return fmt.Errorf("unable to join the voice channel: %w", err)
+		return fmt.Errorf("invalid guild ID: %w", err)
 	}
 
-	defer func() {
-		if err := voiceConn.Speaking(false); err != nil {
-			slog.Error("failed to stop speaking", "error", err)
-		}
+	channelID, err := snowflake.Parse(channelIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid channel ID: %w", err)
+	}
 
-		if err := voiceConn.Disconnect(); err != nil {
-			slog.Error("failed to disconnect", "error", err)
-		}
-	}()
+	conn := manager.CreateConn(guildId)
+	const selfMute = false
+	const selfDeaf = true
+	err = conn.Open(ctx, channelID, selfMute, selfDeaf)
+	defer conn.Close(ctx)
 
-	if err := voiceConn.Speaking(true); err != nil {
+	if err := conn.SetSpeaking(ctx, voice.SpeakingFlagMicrophone); err != nil {
 		return fmt.Errorf("error setting speaking state to 'true': %w", err)
 	}
 
-	if err = callback(s, voiceConn); err != nil {
+	if err = callback(conn); err != nil {
 		return fmt.Errorf("error executing callback: %w", err)
 	}
 

@@ -10,12 +10,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo"
+	"github.com/disgoorg/disgo/bot"
+	"github.com/disgoorg/disgo/gateway"
 	"github.com/glizzus/sound-off/internal/config"
-	"github.com/glizzus/sound-off/internal/handler"
 	"github.com/glizzus/sound-off/internal/opus"
 	"github.com/glizzus/sound-off/internal/schedule"
 	"github.com/glizzus/sound-off/internal/voice"
+	disgoVoice "github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/godave/golibdave"
 	"github.com/glizzus/sound-off/internal/worker"
 	"github.com/redis/go-redis/v9"
 )
@@ -70,20 +73,16 @@ func runWorkerForever() error {
 		return fmt.Errorf("failed to get hostname: %w", err)
 	}
 
-	session, err := handler.NewSession(discordConfig.Token, handler.Handlers{
-		Ready: handler.ReadyLog,
-	})
+	client, err := disgo.New(
+		discordConfig.Token,
+		bot.WithGatewayConfigOpts(gateway.WithIntents(gateway.IntentGuildVoiceStates)),	
+		bot.WithVoiceManagerConfigOpts(
+			disgoVoice.WithDaveSessionCreateFunc(golibdave.NewSession),
+		),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create discord session: %w", err)
 	}
-	if err := session.Open(); err != nil {
-		return fmt.Errorf("failed to open discord session: %w", err)
-	}
-	defer func() {
-		if err := session.Close(); err != nil {
-			slog.Error("failed to close discord session", "error", err)
-		}
-	}()
 
 	blacklistChecker := worker.NewRedisBlacklistHandler(rdb)
 	jobReceiver := worker.NewRedisJobReceiver(rdb, consumer)
@@ -159,7 +158,7 @@ func runWorkerForever() error {
 				}
 				defer respBody.Close()
 				reader := opus.NewFrameReader(respBody)
-				err := voice.WithVoiceChannel(session, job.GuildID, job.TargetChannelID, func(_ *discordgo.Session, vc *discordgo.VoiceConnection) error {
+				err := voice.WithVoiceChannel(ctx, client.VoiceManager, job.GuildID, job.TargetChannelID, func(vc disgoVoice.Conn) error {
 					return opus.StreamToVoice(reader, vc)
 				})
 				if err != nil {
