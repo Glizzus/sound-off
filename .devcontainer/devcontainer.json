@@ -5,8 +5,10 @@
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
 	"dockerComposeFile": ["compose.yaml"],
 	"service": "dev",
-	"workspaceFolder": "/workspaces",
-	"features": {},
+	"features": {
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+	},
+	"workspaceFolder": "/workspaces/sound-off",
 	"customizations": {
 		"vscode": {
 			"extensions": [

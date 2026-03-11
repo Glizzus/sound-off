@@ -1,5 +1,6 @@
-FROM mcr.microsoft.com/devcontainers/go:1-1.24-bookworm
+FROM mcr.microsoft.com/devcontainers/go@sha256:379df9a272ed38aa7a735ad1980bdf6d9462517e40e821a21006e33b105079f7
 
+RUN rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/trusted.gpg.d/yarn.gpg
 RUN curl -ssL "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl" -o kubectl && \
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/

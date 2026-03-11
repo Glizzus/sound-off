@@ -3,12 +3,14 @@ services:
     build: .
     entrypoint: ["sleep", "infinity"]
     volumes:
-      - ../:/workspaces
+      - go-mod:/go/pkg/mod
+
+      - claude-code-data:/home/vscode/.claude
     environment:
       TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
 
   postgres:
-    image: postgres
+    image: postgres@sha256:69e8582b781cb44fa4557b98ed586fe68361e320d9b12f9707494335634f4f3d
     environment:
       POSTGRES_USER: dev
       POSTGRES_PASSWORD: dev
@@ -16,10 +18,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -31,7 +33,7 @@ services:
       - minio-data:/data
 
   redis:
-    image: redis:latest
+    image: redis@sha256:1c054d54ecd1597bba52f4304bca5afbc5565ebe614c5b3d7dc5b7f8a0cd768d
     ports:
       - "6379:6379"
     volumes:
@@ -41,3 +43,6 @@ volumes:
   postgres-data:
   minio-data:
   redis-data:
+
+  go-mod:
+  claude-code-data:

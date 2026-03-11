@@ -20,4 +20,8 @@ if [ ! -z "$DIGITALOCEAN_ACCESS_TOKEN" ]; then
     fi
 fi
 
+cd .. || exit 1
+
 lefthook install
+
+go mod download
